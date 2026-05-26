@@ -1,24 +1,20 @@
 import {
+  BOARD_SIDE_LENGTH,
   buildHouse,
   buyCurrentProperty,
+  canBuildHouse,
   createGame,
   declineCurrentProperty,
   endTurn,
+  getColorGroupProperties,
   getCurrentPlayer,
   getOwnedProperties,
   getSpaceRent,
+  ownsCompleteColorGroup,
   rollAndMove,
 } from './game.js';
 
 const playerColors = ['var(--player-1)', 'var(--player-2)', 'var(--player-3)', 'var(--player-4)'];
-const colorStripes = {
-  rose: '#ff8fa3',
-  amber: '#ffd166',
-  violet: '#b197fc',
-  teal: '#63e6be',
-  green: '#8ce99a',
-  blue: '#74c0fc',
-};
 
 const elements = {
   setupForm: document.querySelector('#setup-form'),
@@ -43,6 +39,7 @@ const elements = {
 
 let game = createGame(['玩家 1', '玩家 2']);
 
+elements.board.style.setProperty('--board-side-length', BOARD_SIDE_LENGTH);
 bindEvents();
 render();
 
@@ -76,7 +73,7 @@ function bindEvents() {
   elements.declineButton.addEventListener('click', () => {
     safeAction(() => {
       const property = declineCurrentProperty(game);
-      setMessage(property ? `放弃购买「${property.name}」。` : '没有可购买地块。');
+      setMessage(property ? `放弃购买「${property.name}」。` : '没有可购买城市。');
     });
   });
 
@@ -114,7 +111,7 @@ function render() {
   elements.currentPlayer.textContent = game.status === 'gameOver'
     ? `${winnerName()} 获胜`
     : currentPlayer.name;
-  elements.currentSpace.textContent = `${currentSpace.name} · 现金 $${currentPlayer.cash}`;
+  elements.currentSpace.textContent = `${currentSpace.name} · ${currentSpace.colorName} · 现金 $${currentPlayer.cash}`;
   elements.roundLabel.textContent = `第 ${game.round} 轮`;
   elements.phaseLabel.textContent = phaseText(game.phase);
   elements.diceLabel.textContent = `骰子：${game.lastDice ? game.lastDice.join(' + ') : '--'}`;
@@ -136,7 +133,7 @@ function renderOffer() {
     return;
   }
   const property = game.board.find((space) => space.id === game.pendingOffer.spaceId);
-  elements.offerText.textContent = `可购买「${property.name}」：价格 $${property.price}，基础租金 $${getSpaceRent(property)}。`;
+  elements.offerText.textContent = `可购买「${property.name}」：价格 $${property.price}，基础租金 $${getSpaceRent(property)}，色组 ${property.colorName}。`;
 }
 
 function renderControls() {
@@ -189,7 +186,7 @@ function renderPlayers() {
         </div>
         <div class="card-grid">
           <span><b>$${player.cash}</b>现金</span>
-          <span><b>${propertyCount}</b>地块</span>
+          <span><b>${propertyCount}</b>城市</span>
           <span><b>${escapeHtml(position)}</b>位置</span>
         </div>
       </article>
@@ -202,25 +199,29 @@ function renderProperties() {
   const properties = getOwnedProperties(game, currentPlayer.id);
 
   if (properties.length === 0) {
-    elements.properties.innerHTML = '<p class="empty-state">当前玩家还没有地块。买下空地后，这里会显示升级按钮。</p>';
+    elements.properties.innerHTML = '<p class="empty-state">当前玩家还没有城市。买下城市后，这里会显示色组进度和建房按钮。</p>';
     return;
   }
 
   elements.properties.innerHTML = properties.map((property) => {
-    const canBuild = property.type === 'property' && property.houses < property.rent.length - 1;
+    const group = getColorGroupProperties(game, property.colorGroup);
+    const ownedInGroup = group.filter((space) => space.ownerId === currentPlayer.id).length;
+    const ownsGroup = ownsCompleteColorGroup(game, currentPlayer.id, property.colorGroup);
+    const canBuild = canBuildHouse(game, property.id, currentPlayer.id);
     const rent = getSpaceRent(property);
-    const buildLabel = property.type === 'property'
-      ? `升级 $${property.houseCost}`
-      : '不能升级';
+    const buildLabel = buildButtonLabel(property, currentPlayer, ownsGroup, canBuild);
 
     return `
-      <article class="property-card">
+      <article class="property-card" style="--stripe: ${stripeFor(property)}">
         <div class="card-topline">
           <strong>${escapeHtml(property.name)}</strong>
           <span class="badge">租金 $${rent}</span>
         </div>
-        <div class="houses">${property.type === 'property' ? '★'.repeat(property.houses) || '未升级' : property.typeLabel ?? property.type}</div>
-        <button type="button" data-build="${property.id}" ${canBuild ? '' : 'disabled'}>${buildLabel}</button>
+        <div class="property-detail">
+          <span>${escapeHtml(property.colorName)} ${ownedInGroup}/${group.length}</span>
+          <span>${'★'.repeat(property.houses) || '未建房'}</span>
+        </div>
+        <button type="button" data-build="${property.id}" ${canBuild ? '' : 'disabled'}>${escapeHtml(buildLabel)}</button>
       </article>
     `;
   }).join('');
@@ -262,34 +263,47 @@ function winnerName() {
 }
 
 function gridPosition(index) {
-  if (index <= 6) return { row: 1, column: index + 1 };
-  if (index <= 12) return { row: index - 5, column: 7 };
-  if (index <= 18) return { row: 7, column: 20 - index };
-  return { row: 25 - index, column: 1 };
+  const side = BOARD_SIDE_LENGTH;
+  const rightStart = side;
+  const bottomStart = rightStart + side - 1;
+  const leftStart = bottomStart + side - 1;
+
+  if (index < rightStart) {
+    return { row: 1, column: index + 1 };
+  }
+
+  if (index < bottomStart) {
+    return { row: index - rightStart + 2, column: side };
+  }
+
+  if (index < leftStart) {
+    return { row: side, column: side - (index - bottomStart) - 1 };
+  }
+
+  return { row: side - (index - leftStart) - 1, column: 1 };
 }
 
 function stripeFor(space) {
-  if (space.color) return colorStripes[space.color] ?? '#f3c969';
-  if (space.type === 'chance') return '#f3c969';
-  if (space.type === 'tax' || space.type === 'go-to-jail') return '#ff7066';
-  if (space.type === 'railroad') return '#ced4da';
-  if (space.type === 'utility') return '#74c0fc';
-  return 'rgba(255, 255, 255, 0.18)';
+  return space.color ?? 'rgba(255, 255, 255, 0.18)';
 }
 
 function spaceMeta(space, owner) {
-  if (space.price) {
-    const ownerText = owner ? ` · ${escapeHtml(owner.name)}` : '';
-    const houseText = space.houses ? ` · ${'★'.repeat(space.houses)}` : '';
-    return `$${space.price} · 租 $${getSpaceRent(space)}${ownerText}${houseText}`;
-  }
-  if (space.amount) return `支付 $${space.amount}`;
-  return escapeHtml(space.description ?? space.type);
+  const ownerText = owner ? ` · ${escapeHtml(owner.name)}` : '';
+  const houseText = space.houses ? ` · ${'★'.repeat(space.houses)}` : '';
+  return `${escapeHtml(space.colorName)} · $${space.price} · 租 $${getSpaceRent(space)}${ownerText}${houseText}`;
 }
 
 function tokenMarkup(player) {
   const index = Number(player.id.replace('p', '')) - 1;
   return `<span class="token" style="background: ${playerColors[index]}">${index + 1}</span>`;
+}
+
+function buildButtonLabel(property, player, ownsGroup, canBuild) {
+  if (canBuild) return `建房 $${property.houseCost}`;
+  if (!ownsGroup) return '需集齐同色组';
+  if (property.houses >= property.rent.length - 1) return '已满级';
+  if (player.cash < property.houseCost) return '现金不足';
+  return '不能建房';
 }
 
 function escapeHtml(value) {

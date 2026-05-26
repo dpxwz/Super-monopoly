@@ -1,48 +1,188 @@
 export const START_CASH = 1500;
-export const START_BONUS = 200;
+export const LAP_BONUS = 200;
+export const START_BONUS = LAP_BONUS;
 export const MAX_PLAYERS = 4;
+export const BOARD_SIDE_LENGTH = 12;
 
-export const BOARD_SPACES = [
-  { id: 'start', type: 'start', name: '起点', description: '经过或停在这里获得 $200' },
-  { id: 'sakura-road', type: 'property', name: '樱花路', color: 'rose', price: 60, rent: [2, 10, 30, 90], houseCost: 50 },
-  { id: 'birch-cafe', type: 'property', name: '白桦咖啡馆', color: 'rose', price: 70, rent: [4, 20, 60, 180], houseCost: 50 },
-  { id: 'chance-1', type: 'chance', name: '机会', description: '抽一张机会卡' },
-  { id: 'harbor-station', type: 'railroad', name: '港湾车站', price: 200, rent: [25, 50, 100, 200], houseCost: 0 },
-  { id: 'income-tax', type: 'tax', name: '所得税', amount: 100, description: '支付 $100' },
-  { id: 'platform-garden', type: 'property', name: '月台花园', color: 'amber', price: 100, rent: [6, 30, 90, 270], houseCost: 50 },
-  { id: 'starlamp-street', type: 'property', name: '星灯街', color: 'amber', price: 110, rent: [8, 40, 100, 300], houseCost: 50 },
-  { id: 'jail', type: 'jail', name: '监狱 / 探监', description: '只是路过时不会受罚' },
-  { id: 'neon-cinema', type: 'property', name: '霓虹影院', color: 'violet', price: 140, rent: [10, 50, 150, 450], houseCost: 100 },
-  { id: 'chance-2', type: 'chance', name: '机会', description: '抽一张机会卡' },
-  { id: 'old-town-books', type: 'property', name: '旧城区书店', color: 'violet', price: 150, rent: [12, 60, 180, 500], houseCost: 100 },
-  { id: 'free-parking', type: 'parking', name: '免费停车', description: '安全休息一回合' },
-  { id: 'coral-apartment', type: 'property', name: '珊瑚公寓', color: 'teal', price: 180, rent: [14, 70, 200, 550], houseCost: 100 },
-  { id: 'spruce-plaza', type: 'property', name: '云杉广场', color: 'teal', price: 190, rent: [16, 80, 220, 600], houseCost: 100 },
-  { id: 'utility', type: 'utility', name: '水电公司', price: 150, rent: [20, 40, 80, 120], houseCost: 0 },
-  { id: 'loop-rail', type: 'railroad', name: '环城铁路', price: 200, rent: [25, 50, 100, 200], houseCost: 0 },
-  { id: 'mint-villa', type: 'property', name: '薄荷别墅', color: 'green', price: 220, rent: [18, 90, 250, 700], houseCost: 150 },
-  { id: 'chance-3', type: 'chance', name: '机会', description: '抽一张机会卡' },
-  { id: 'golden-tower', type: 'property', name: '黄金塔', color: 'green', price: 260, rent: [22, 110, 330, 800], houseCost: 150 },
-  { id: 'go-to-jail', type: 'go-to-jail', name: '去监狱', description: '直接移动到监狱，下次轮到你时暂停一次' },
-  { id: 'blue-harbor', type: 'property', name: '蓝港码头', color: 'blue', price: 300, rent: [26, 130, 390, 900], houseCost: 200 },
-  { id: 'luxury-tax', type: 'tax', name: '奢侈税', amount: 150, description: '支付 $150' },
-  { id: 'stellar-hotel', type: 'property', name: '星际酒店', color: 'blue', price: 350, rent: [35, 175, 500, 1100], houseCost: 200 },
+const CITY_GROUPS = [
+  {
+    colorGroup: 'brown',
+    colorName: '棕色',
+    color: '#8d6e63',
+    priceStart: 60,
+    houseCost: 50,
+    baseRent: 2,
+    cities: [
+      ['athens', '雅典'],
+      ['lisbon', '里斯本'],
+      ['madrid', '马德里'],
+      ['barcelona', '巴塞罗那'],
+    ],
+  },
+  {
+    colorGroup: 'sky',
+    colorName: '天蓝色',
+    color: '#74c0fc',
+    priceStart: 100,
+    houseCost: 60,
+    baseRent: 6,
+    cities: [
+      ['paris', '巴黎'],
+      ['lyon', '里昂'],
+      ['marseille', '马赛'],
+      ['nice', '尼斯'],
+    ],
+  },
+  {
+    colorGroup: 'pink',
+    colorName: '粉色',
+    color: '#f783ac',
+    priceStart: 140,
+    houseCost: 80,
+    baseRent: 10,
+    cities: [
+      ['london', '伦敦'],
+      ['manchester', '曼彻斯特'],
+      ['edinburgh', '爱丁堡'],
+      ['dublin', '都柏林'],
+    ],
+  },
+  {
+    colorGroup: 'orange',
+    colorName: '橙色',
+    color: '#ffa94d',
+    priceStart: 180,
+    houseCost: 100,
+    baseRent: 14,
+    cities: [
+      ['berlin', '柏林'],
+      ['munich', '慕尼黑'],
+      ['hamburg', '汉堡'],
+      ['frankfurt', '法兰克福'],
+    ],
+  },
+  {
+    colorGroup: 'red',
+    colorName: '红色',
+    color: '#ff6b6b',
+    priceStart: 220,
+    houseCost: 120,
+    baseRent: 18,
+    cities: [
+      ['rome', '罗马'],
+      ['milan', '米兰'],
+      ['venice', '威尼斯'],
+      ['florence', '佛罗伦萨'],
+    ],
+  },
+  {
+    colorGroup: 'yellow',
+    colorName: '黄色',
+    color: '#ffd43b',
+    priceStart: 260,
+    houseCost: 140,
+    baseRent: 22,
+    cities: [
+      ['cairo', '开罗'],
+      ['cape-town', '开普敦'],
+      ['nairobi', '内罗毕'],
+      ['casablanca', '卡萨布兰卡'],
+    ],
+  },
+  {
+    colorGroup: 'green',
+    colorName: '绿色',
+    color: '#69db7c',
+    priceStart: 300,
+    houseCost: 160,
+    baseRent: 26,
+    cities: [
+      ['dubai', '迪拜'],
+      ['doha', '多哈'],
+      ['istanbul', '伊斯坦布尔'],
+      ['jerusalem', '耶路撒冷'],
+    ],
+  },
+  {
+    colorGroup: 'teal',
+    colorName: '青色',
+    color: '#63e6be',
+    priceStart: 340,
+    houseCost: 180,
+    baseRent: 30,
+    cities: [
+      ['tokyo', '东京'],
+      ['osaka', '大阪'],
+      ['kyoto', '京都'],
+      ['sapporo', '札幌'],
+    ],
+  },
+  {
+    colorGroup: 'blue',
+    colorName: '蓝色',
+    color: '#4dabf7',
+    priceStart: 380,
+    houseCost: 200,
+    baseRent: 34,
+    cities: [
+      ['seoul', '首尔'],
+      ['busan', '釜山'],
+      ['taipei', '台北'],
+      ['hong-kong', '香港'],
+    ],
+  },
+  {
+    colorGroup: 'purple',
+    colorName: '紫色',
+    color: '#b197fc',
+    priceStart: 420,
+    houseCost: 220,
+    baseRent: 38,
+    cities: [
+      ['new-york', '纽约'],
+      ['los-angeles', '洛杉矶'],
+      ['chicago', '芝加哥'],
+      ['san-francisco', '旧金山'],
+    ],
+  },
+  {
+    colorGroup: 'gold',
+    colorName: '金色',
+    color: '#f3c969',
+    priceStart: 460,
+    houseCost: 240,
+    baseRent: 42,
+    cities: [
+      ['sydney', '悉尼'],
+      ['melbourne', '墨尔本'],
+      ['auckland', '奥克兰'],
+      ['vancouver', '温哥华'],
+    ],
+  },
 ];
 
-export const CHANCE_CARDS = [
-  { id: 'salary-bonus', text: '股票分红，收取 $120。', money: 120 },
-  { id: 'street-repair', text: '道路维修分摊，支付 $80。', money: -80 },
-  { id: 'advance-start', text: '前进到起点，并领取 $200。', moveTo: 0, collectStart: true },
-  { id: 'speeding', text: '超速被拦，直接去监狱。', goToJail: true },
-  { id: 'street-fair', text: '街头市集大卖，每名对手付你 $25。', collectFromEach: 25 },
-  { id: 'charity', text: '慈善捐款，支付 $50。', money: -50 },
-  { id: 'shortcut', text: '发现近路，前进三格。', moveBy: 3 },
-];
+export const BOARD_SPACES = CITY_GROUPS.flatMap((group, groupIndex) => (
+  group.cities.map(([id, name], cityIndex) => {
+    const baseRent = group.baseRent + cityIndex * 2;
+    return {
+      id,
+      type: 'property',
+      name,
+      colorGroup: group.colorGroup,
+      colorName: group.colorName,
+      color: group.color,
+      groupOrder: groupIndex,
+      groupSize: group.cities.length,
+      price: group.priceStart + cityIndex * 10,
+      rent: [baseRent, baseRent * 5, baseRent * 15, baseRent * 45, baseRent * 80],
+      houseCost: group.houseCost,
+    };
+  })
+));
 
-export function createGame(playerNames = ['玩家 1', '玩家 2'], options = {}) {
+export function createGame(playerNames = ['玩家 1', '玩家 2']) {
   const names = normalizePlayerNames(playerNames);
   const board = cloneBoard(BOARD_SPACES);
-  const chanceDeck = [...(options.chanceDeck ?? CHANCE_CARDS)];
 
   return {
     status: 'playing',
@@ -50,9 +190,6 @@ export function createGame(playerNames = ['玩家 1', '玩家 2'], options = {})
     turn: 0,
     round: 1,
     board,
-    chanceDeck,
-    chanceCursor: 0,
-    jailIndex: board.findIndex((space) => space.type === 'jail'),
     pendingOffer: null,
     lastDice: null,
     winnerId: null,
@@ -63,9 +200,8 @@ export function createGame(playerNames = ['玩家 1', '玩家 2'], options = {})
       position: 0,
       properties: [],
       bankrupt: false,
-      skipTurns: 0,
     })),
-    log: ['新游戏开始。掷骰子，买地，收租，活到最后。'],
+    log: ['新游戏开始。掷骰子，买城市，集齐同色组后建房。'],
   };
 }
 
@@ -84,13 +220,6 @@ export function rollAndMove(game, dice = rollDice()) {
     throw new Error('破产玩家不能行动。');
   }
 
-  if (player.skipTurns > 0) {
-    player.skipTurns -= 1;
-    game.phase = 'end';
-    addLog(game, `${player.name} 在监狱暂停一次。`);
-    return game;
-  }
-
   const normalizedDice = normalizeDice(dice);
   const steps = normalizedDice.reduce((sum, value) => sum + value, 0);
   game.lastDice = normalizedDice;
@@ -105,7 +234,7 @@ export function rollAndMove(game, dice = rollDice()) {
 export function buyCurrentProperty(game) {
   assertPlaying(game);
   if (!game.pendingOffer) {
-    throw new Error('当前没有可购买的地块。');
+    throw new Error('当前没有可购买的城市。');
   }
 
   const player = getCurrentPlayer(game);
@@ -114,7 +243,7 @@ export function buyCurrentProperty(game) {
     throw new Error('这个格子不能购买。');
   }
   if (property.ownerId) {
-    throw new Error('这个地块已经有主人。');
+    throw new Error('这个城市已经有主人。');
   }
   if (player.cash < property.price) {
     throw new Error(`${player.name} 的现金不足，不能购买「${property.name}」。`);
@@ -151,16 +280,19 @@ export function buildHouse(game, propertyId) {
   const property = findSpace(game, propertyId);
 
   if (!property) {
-    throw new Error('找不到这个地块。');
+    throw new Error('找不到这个城市。');
   }
   if (property.ownerId !== player.id) {
-    throw new Error('只能升级自己拥有的地块。');
+    throw new Error('只能升级自己拥有的城市。');
   }
-  if (property.type !== 'property') {
-    throw new Error('车站和水电公司不能建造房屋。');
+  if (!isPurchasable(property)) {
+    throw new Error('只有普通城市地块可以建房。');
+  }
+  if (!ownsCompleteColorGroup(game, player.id, property.colorGroup)) {
+    throw new Error('必须拥有同色组的全部城市后才能建房。');
   }
   if (property.houses >= property.rent.length - 1) {
-    throw new Error('这个地块已经升到最高等级。');
+    throw new Error('这个城市已经升到最高等级。');
   }
   if (player.cash < property.houseCost) {
     throw new Error(`${player.name} 的现金不足，不能升级「${property.name}」。`);
@@ -197,11 +329,6 @@ export function endTurn(game) {
     if (player.bankrupt) {
       continue;
     }
-    if (player.skipTurns > 0) {
-      player.skipTurns -= 1;
-      addLog(game, `${player.name} 在监狱暂停一次。`);
-      continue;
-    }
 
     game.phase = 'roll';
     addLog(game, `轮到 ${player.name}。`);
@@ -212,50 +339,31 @@ export function endTurn(game) {
   return game;
 }
 
-export function applyChanceCard(game, card) {
-  assertPlaying(game);
-  const player = getCurrentPlayer(game);
-  addLog(game, `机会卡：${card.text}`);
-
-  if (typeof card.money === 'number') {
-    adjustCash(game, player, card.money, card.text);
-  }
-
-  if (typeof card.collectFromEach === 'number') {
-    for (const other of game.players) {
-      if (other.id !== player.id && !other.bankrupt) {
-        transferCash(game, other, player, card.collectFromEach, `${other.name} 支付给 ${player.name}`);
-      }
-    }
-  }
-
-  if (card.goToJail) {
-    sendToJail(game, player);
-    return game;
-  }
-
-  if (Number.isInteger(card.moveTo)) {
-    const previousPosition = player.position;
-    player.position = card.moveTo;
-    if (card.collectStart || card.moveTo < previousPosition) {
-      adjustCash(game, player, START_BONUS, '经过起点');
-    }
-    resolveLanding(game, player, { fromChance: true });
-    return game;
-  }
-
-  if (Number.isInteger(card.moveBy)) {
-    movePlayerBy(game, player, card.moveBy, true);
-    resolveLanding(game, player, { fromChance: true });
-    return game;
-  }
-
-  checkWinner(game);
-  return game;
-}
-
 export function getOwnedProperties(game, playerId) {
   return game.board.filter((space) => isPurchasable(space) && space.ownerId === playerId);
+}
+
+export function getColorGroupProperties(game, colorGroup) {
+  return game.board.filter((space) => space.colorGroup === colorGroup);
+}
+
+export function ownsCompleteColorGroup(game, playerId, colorGroup) {
+  const group = getColorGroupProperties(game, colorGroup);
+  return group.length > 0 && group.every((space) => space.ownerId === playerId);
+}
+
+export function canBuildHouse(game, propertyId, playerId = getCurrentPlayer(game).id) {
+  const player = game.players.find((candidate) => candidate.id === playerId);
+  const property = findSpace(game, propertyId);
+  return Boolean(
+    player
+    && property
+    && property.ownerId === player.id
+    && isPurchasable(property)
+    && ownsCompleteColorGroup(game, player.id, property.colorGroup)
+    && property.houses < property.rent.length - 1
+    && player.cash >= property.houseCost,
+  );
 }
 
 export function getSpaceRent(space) {
@@ -269,55 +377,15 @@ export function rollDice(random = Math.random) {
   return [1 + Math.floor(random() * 6), 1 + Math.floor(random() * 6)];
 }
 
-function resolveLanding(game, player, options = {}) {
+function resolveLanding(game, player) {
   if (game.status === 'gameOver') {
     return;
   }
 
   const space = currentSpace(game, player);
   game.pendingOffer = null;
-
-  switch (space.type) {
-    case 'start':
-      game.phase = 'end';
-      addLog(game, `${player.name} 停在起点。`);
-      break;
-    case 'property':
-    case 'railroad':
-    case 'utility':
-      resolvePurchasableSpace(game, player, space);
-      break;
-    case 'chance':
-      drawChanceCard(game);
-      if (!game.pendingOffer && game.phase !== 'action') {
-        game.phase = 'end';
-      }
-      break;
-    case 'tax':
-      adjustCash(game, player, -space.amount, space.name);
-      game.phase = 'end';
-      addLog(game, `${player.name} 支付「${space.name}」$${space.amount}。`);
-      break;
-    case 'jail':
-      game.phase = 'end';
-      addLog(game, `${player.name} 只是探监，没有处罚。`);
-      break;
-    case 'parking':
-      game.phase = 'end';
-      addLog(game, `${player.name} 在免费停车休息。`);
-      break;
-    case 'go-to-jail':
-      sendToJail(game, player);
-      game.phase = 'end';
-      break;
-    default:
-      game.phase = 'end';
-      addLog(game, `${player.name} 停在「${space.name}」。`);
-  }
-
-  if (!options.fromChance) {
-    checkWinner(game);
-  }
+  resolvePurchasableSpace(game, player, space);
+  checkWinner(game);
 }
 
 function resolvePurchasableSpace(game, player, space) {
@@ -345,34 +413,16 @@ function resolvePurchasableSpace(game, player, space) {
   game.phase = 'end';
 }
 
-function drawChanceCard(game) {
-  if (game.chanceDeck.length === 0) {
-    game.phase = 'end';
-    return null;
-  }
-  const card = game.chanceDeck[game.chanceCursor % game.chanceDeck.length];
-  game.chanceCursor += 1;
-  applyChanceCard(game, card);
-  return card;
-}
-
-function movePlayerBy(game, player, steps, payStartBonus) {
+function movePlayerBy(game, player, steps, payLapBonus) {
   const previousPosition = player.position;
   const boardLength = game.board.length;
   const total = previousPosition + steps;
   player.position = ((total % boardLength) + boardLength) % boardLength;
 
-  if (payStartBonus && steps > 0 && total >= boardLength) {
-    adjustCash(game, player, START_BONUS, '经过起点');
-    addLog(game, `${player.name} 经过起点，领取 $${START_BONUS}。`);
+  if (payLapBonus && steps > 0 && total >= boardLength) {
+    adjustCash(game, player, LAP_BONUS, '完成一圈');
+    addLog(game, `${player.name} 完成一圈，领取 $${LAP_BONUS}。`);
   }
-}
-
-function sendToJail(game, player) {
-  player.position = game.jailIndex;
-  player.skipTurns = Math.max(player.skipTurns, 1);
-  game.phase = 'end';
-  addLog(game, `${player.name} 被送进监狱，下次轮到时暂停一次。`);
 }
 
 function adjustCash(game, player, amount, reason) {
@@ -412,11 +462,11 @@ function markBankrupt(game, player, reason) {
     if (property) {
       property.ownerId = null;
       property.houses = 0;
-      property.currentRent = property.rent?.[0] ?? 0;
+      property.currentRent = property.rent[0];
     }
   }
   player.properties = [];
-  addLog(game, `${player.name} 因「${reason}」破产，名下资产回到市场。`);
+  addLog(game, `${player.name} 因「${reason}」破产，名下城市回到市场。`);
   checkWinner(game);
 }
 
@@ -439,16 +489,16 @@ function findSpace(game, spaceId) {
 }
 
 function isPurchasable(space) {
-  return ['property', 'railroad', 'utility'].includes(space?.type);
+  return space?.type === 'property';
 }
 
 function cloneBoard(spaces) {
   return spaces.map((space) => ({
     ...space,
-    rent: space.rent ? [...space.rent] : undefined,
+    rent: [...space.rent],
     ownerId: null,
     houses: 0,
-    currentRent: space.rent?.[0] ?? 0,
+    currentRent: space.rent[0],
   }));
 }
 
