@@ -4,28 +4,67 @@ export const START_BONUS = LAP_BONUS;
 export const MAX_PLAYERS = 4;
 export const BOARD_SIDE_LENGTH = 12;
 
+const START_SPACE = {
+  id: 'start',
+  type: 'start',
+  name: '起始格',
+  bonus: LAP_BONUS,
+  description: `经过或停在这里获得 $${LAP_BONUS}`,
+};
+
 const CITY_GROUPS = [
   {
-    colorGroup: 'brown',
+    colorGroup: 'greece-brown',
     colorName: '棕色',
+    countryName: '希腊',
     color: '#8d6e63',
     priceStart: 60,
     houseCost: 50,
     baseRent: 2,
     cities: [
-      ['athens', '雅典'],
-      ['lisbon', '里斯本'],
-      ['madrid', '马德里'],
-      ['barcelona', '巴塞罗那'],
+      ['thessaloniki', '塞萨洛尼基'],
+      ['patras', '帕特雷'],
+      ['heraklion', '伊拉克利翁'],
     ],
   },
   {
-    colorGroup: 'sky',
+    colorGroup: 'portugal-sky',
     colorName: '天蓝色',
+    countryName: '葡萄牙',
     color: '#74c0fc',
     priceStart: 100,
     houseCost: 60,
     baseRent: 6,
+    cities: [
+      ['lisbon', '里斯本'],
+      ['porto', '波尔图'],
+      ['coimbra', '科英布拉'],
+      ['faro', '法鲁'],
+    ],
+  },
+  {
+    colorGroup: 'spain-pink',
+    colorName: '粉色',
+    countryName: '西班牙',
+    color: '#f783ac',
+    priceStart: 140,
+    houseCost: 80,
+    baseRent: 10,
+    cities: [
+      ['madrid', '马德里'],
+      ['barcelona', '巴塞罗那'],
+      ['valencia', '瓦伦西亚'],
+      ['seville', '塞维利亚'],
+    ],
+  },
+  {
+    colorGroup: 'france-orange',
+    colorName: '橙色',
+    countryName: '法国',
+    color: '#ffa94d',
+    priceStart: 180,
+    houseCost: 100,
+    baseRent: 14,
     cities: [
       ['paris', '巴黎'],
       ['lyon', '里昂'],
@@ -34,26 +73,28 @@ const CITY_GROUPS = [
     ],
   },
   {
-    colorGroup: 'pink',
-    colorName: '粉色',
-    color: '#f783ac',
-    priceStart: 140,
-    houseCost: 80,
-    baseRent: 10,
+    colorGroup: 'uk-red',
+    colorName: '红色',
+    countryName: '英国',
+    color: '#ff6b6b',
+    priceStart: 220,
+    houseCost: 120,
+    baseRent: 18,
     cities: [
       ['london', '伦敦'],
       ['manchester', '曼彻斯特'],
       ['edinburgh', '爱丁堡'],
-      ['dublin', '都柏林'],
+      ['liverpool', '利物浦'],
     ],
   },
   {
-    colorGroup: 'orange',
-    colorName: '橙色',
-    color: '#ffa94d',
-    priceStart: 180,
-    houseCost: 100,
-    baseRent: 14,
+    colorGroup: 'germany-yellow',
+    colorName: '黄色',
+    countryName: '德国',
+    color: '#ffd43b',
+    priceStart: 260,
+    houseCost: 140,
+    baseRent: 22,
     cities: [
       ['berlin', '柏林'],
       ['munich', '慕尼黑'],
@@ -62,12 +103,13 @@ const CITY_GROUPS = [
     ],
   },
   {
-    colorGroup: 'red',
-    colorName: '红色',
-    color: '#ff6b6b',
-    priceStart: 220,
-    houseCost: 120,
-    baseRent: 18,
+    colorGroup: 'italy-green',
+    colorName: '绿色',
+    countryName: '意大利',
+    color: '#69db7c',
+    priceStart: 300,
+    houseCost: 160,
+    baseRent: 26,
     cities: [
       ['rome', '罗马'],
       ['milan', '米兰'],
@@ -76,36 +118,9 @@ const CITY_GROUPS = [
     ],
   },
   {
-    colorGroup: 'yellow',
-    colorName: '黄色',
-    color: '#ffd43b',
-    priceStart: 260,
-    houseCost: 140,
-    baseRent: 22,
-    cities: [
-      ['cairo', '开罗'],
-      ['cape-town', '开普敦'],
-      ['nairobi', '内罗毕'],
-      ['casablanca', '卡萨布兰卡'],
-    ],
-  },
-  {
-    colorGroup: 'green',
-    colorName: '绿色',
-    color: '#69db7c',
-    priceStart: 300,
-    houseCost: 160,
-    baseRent: 26,
-    cities: [
-      ['dubai', '迪拜'],
-      ['doha', '多哈'],
-      ['istanbul', '伊斯坦布尔'],
-      ['jerusalem', '耶路撒冷'],
-    ],
-  },
-  {
-    colorGroup: 'teal',
+    colorGroup: 'japan-teal',
     colorName: '青色',
+    countryName: '日本',
     color: '#63e6be',
     priceStart: 340,
     houseCost: 180,
@@ -118,8 +133,9 @@ const CITY_GROUPS = [
     ],
   },
   {
-    colorGroup: 'blue',
+    colorGroup: 'korea-blue',
     colorName: '蓝色',
+    countryName: '韩国',
     color: '#4dabf7',
     priceStart: 380,
     houseCost: 200,
@@ -127,13 +143,14 @@ const CITY_GROUPS = [
     cities: [
       ['seoul', '首尔'],
       ['busan', '釜山'],
-      ['taipei', '台北'],
-      ['hong-kong', '香港'],
+      ['incheon', '仁川'],
+      ['daegu', '大邱'],
     ],
   },
   {
-    colorGroup: 'purple',
+    colorGroup: 'usa-purple',
     colorName: '紫色',
+    countryName: '美国',
     color: '#b197fc',
     priceStart: 420,
     houseCost: 220,
@@ -146,8 +163,9 @@ const CITY_GROUPS = [
     ],
   },
   {
-    colorGroup: 'gold',
+    colorGroup: 'australia-gold',
     colorName: '金色',
+    countryName: '澳大利亚',
     color: '#f3c969',
     priceStart: 460,
     houseCost: 240,
@@ -155,19 +173,20 @@ const CITY_GROUPS = [
     cities: [
       ['sydney', '悉尼'],
       ['melbourne', '墨尔本'],
-      ['auckland', '奥克兰'],
-      ['vancouver', '温哥华'],
+      ['brisbane', '布里斯班'],
+      ['perth', '珀斯'],
     ],
   },
 ];
 
-export const BOARD_SPACES = CITY_GROUPS.flatMap((group, groupIndex) => (
+const PROPERTY_SPACES = CITY_GROUPS.flatMap((group, groupIndex) => (
   group.cities.map(([id, name], cityIndex) => {
     const baseRent = group.baseRent + cityIndex * 2;
     return {
       id,
       type: 'property',
       name,
+      countryName: group.countryName,
       colorGroup: group.colorGroup,
       colorName: group.colorName,
       color: group.color,
@@ -179,6 +198,8 @@ export const BOARD_SPACES = CITY_GROUPS.flatMap((group, groupIndex) => (
     };
   })
 ));
+
+export const BOARD_SPACES = [START_SPACE, ...PROPERTY_SPACES];
 
 export function createGame(playerNames = ['玩家 1', '玩家 2']) {
   const names = normalizePlayerNames(playerNames);
@@ -201,7 +222,7 @@ export function createGame(playerNames = ['玩家 1', '玩家 2']) {
       properties: [],
       bankrupt: false,
     })),
-    log: ['新游戏开始。掷骰子，买城市，集齐同色组后建房。'],
+    log: ['新游戏开始。经过起始格领钱，买城市，集齐同国家色组后建房。'],
   };
 }
 
@@ -344,7 +365,7 @@ export function getOwnedProperties(game, playerId) {
 }
 
 export function getColorGroupProperties(game, colorGroup) {
-  return game.board.filter((space) => space.colorGroup === colorGroup);
+  return game.board.filter((space) => isPurchasable(space) && space.colorGroup === colorGroup);
 }
 
 export function ownsCompleteColorGroup(game, playerId, colorGroup) {
@@ -384,6 +405,14 @@ function resolveLanding(game, player) {
 
   const space = currentSpace(game, player);
   game.pendingOffer = null;
+
+  if (space.type === 'start') {
+    game.phase = 'end';
+    addLog(game, `${player.name} 停在起始格。`);
+    checkWinner(game);
+    return;
+  }
+
   resolvePurchasableSpace(game, player, space);
   checkWinner(game);
 }
@@ -420,8 +449,8 @@ function movePlayerBy(game, player, steps, payLapBonus) {
   player.position = ((total % boardLength) + boardLength) % boardLength;
 
   if (payLapBonus && steps > 0 && total >= boardLength) {
-    adjustCash(game, player, LAP_BONUS, '完成一圈');
-    addLog(game, `${player.name} 完成一圈，领取 $${LAP_BONUS}。`);
+    adjustCash(game, player, LAP_BONUS, '经过起始格');
+    addLog(game, `${player.name} 经过起始格，领取 $${LAP_BONUS}。`);
   }
 }
 
@@ -493,13 +522,19 @@ function isPurchasable(space) {
 }
 
 function cloneBoard(spaces) {
-  return spaces.map((space) => ({
-    ...space,
-    rent: [...space.rent],
-    ownerId: null,
-    houses: 0,
-    currentRent: space.rent[0],
-  }));
+  return spaces.map((space) => {
+    if (space.type === 'start') {
+      return { ...space };
+    }
+
+    return {
+      ...space,
+      rent: [...space.rent],
+      ownerId: null,
+      houses: 0,
+      currentRent: space.rent[0],
+    };
+  });
 }
 
 function normalizePlayerNames(playerNames) {

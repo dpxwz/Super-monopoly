@@ -111,7 +111,9 @@ function render() {
   elements.currentPlayer.textContent = game.status === 'gameOver'
     ? `${winnerName()} 获胜`
     : currentPlayer.name;
-  elements.currentSpace.textContent = `${currentSpace.name} · ${currentSpace.colorName} · 现金 $${currentPlayer.cash}`;
+  elements.currentSpace.textContent = currentSpace.type === 'start'
+    ? `${currentSpace.name} · 经过奖励 $${currentSpace.bonus} · 现金 $${currentPlayer.cash}`
+    : `${currentSpace.name} · ${currentSpace.countryName} · ${currentSpace.colorName} · 现金 $${currentPlayer.cash}`;
   elements.roundLabel.textContent = `第 ${game.round} 轮`;
   elements.phaseLabel.textContent = phaseText(game.phase);
   elements.diceLabel.textContent = `骰子：${game.lastDice ? game.lastDice.join(' + ') : '--'}`;
@@ -133,7 +135,7 @@ function renderOffer() {
     return;
   }
   const property = game.board.find((space) => space.id === game.pendingOffer.spaceId);
-  elements.offerText.textContent = `可购买「${property.name}」：价格 $${property.price}，基础租金 $${getSpaceRent(property)}，色组 ${property.colorName}。`;
+  elements.offerText.textContent = `可购买「${property.name}」：价格 $${property.price}，基础租金 $${getSpaceRent(property)}，${property.countryName} ${property.colorName}组。`;
 }
 
 function renderControls() {
@@ -218,7 +220,7 @@ function renderProperties() {
           <span class="badge">租金 $${rent}</span>
         </div>
         <div class="property-detail">
-          <span>${escapeHtml(property.colorName)} ${ownedInGroup}/${group.length}</span>
+          <span>${escapeHtml(property.countryName)} · ${escapeHtml(property.colorName)} ${ownedInGroup}/${group.length}</span>
           <span>${'★'.repeat(property.houses) || '未建房'}</span>
         </div>
         <button type="button" data-build="${property.id}" ${canBuild ? '' : 'disabled'}>${escapeHtml(buildLabel)}</button>
@@ -284,13 +286,17 @@ function gridPosition(index) {
 }
 
 function stripeFor(space) {
+  if (space.type === 'start') return 'var(--accent)';
   return space.color ?? 'rgba(255, 255, 255, 0.18)';
 }
 
 function spaceMeta(space, owner) {
+  if (space.type === 'start') {
+    return escapeHtml(space.description ?? `经过获得 $${space.bonus}`);
+  }
   const ownerText = owner ? ` · ${escapeHtml(owner.name)}` : '';
   const houseText = space.houses ? ` · ${'★'.repeat(space.houses)}` : '';
-  return `${escapeHtml(space.colorName)} · $${space.price} · 租 $${getSpaceRent(space)}${ownerText}${houseText}`;
+  return `${escapeHtml(space.countryName)} · ${escapeHtml(space.colorName)} · $${space.price} · 租 $${getSpaceRent(space)}${ownerText}${houseText}`;
 }
 
 function tokenMarkup(player) {
@@ -300,7 +306,7 @@ function tokenMarkup(player) {
 
 function buildButtonLabel(property, player, ownsGroup, canBuild) {
   if (canBuild) return `建房 $${property.houseCost}`;
-  if (!ownsGroup) return '需集齐同色组';
+  if (!ownsGroup) return '需集齐同国色组';
   if (property.houses >= property.rent.length - 1) return '已满级';
   if (player.cash < property.houseCost) return '现金不足';
   return '不能建房';
