@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Super Monopoly</title>
+    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%230d1117"/><text x="32" y="42" text-anchor="middle" font-size="34">🎲</text></svg>' />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero" aria-labelledby="game-title">
+        <div>
+          <p class="eyebrow">local web board game</p>
+          <h1 id="game-title">Super Monopoly</h1>
+          <p class="hero-copy">掷骰子、买地、升级、收租。2 到 4 人同屏游玩，最后没有破产的人获胜。</p>
+        </div>
+        <form id="setup-form" class="setup-card">
+          <h2>玩家</h2>
+          <label>
+            玩家 1
+            <input name="player" value="玩家 1" maxlength="14" />
+          </label>
+          <label>
+            玩家 2
+            <input name="player" value="玩家 2" maxlength="14" />
+          </label>
+          <label>
+            玩家 3，可选
+            <input name="player" maxlength="14" placeholder="留空则不加入" />
+          </label>
+          <label>
+            玩家 4，可选
+            <input name="player" maxlength="14" placeholder="留空则不加入" />
+          </label>
+          <button class="primary-button" type="submit">开始新游戏</button>
+        </form>
+      </section>
+
+      <section class="game-layout" aria-label="游戏区">
+        <div class="board-card">
+          <div id="board" class="board" aria-label="大富翁棋盘">
+            <section class="center-panel" aria-live="polite">
+              <div>
+                <p class="eyebrow">current turn</p>
+                <h2 id="current-player">等待开始</h2>
+                <p id="current-space" class="muted">填写玩家后开始。</p>
+              </div>
+              <div class="turn-stats">
+                <span id="round-label">第 1 轮</span>
+                <span id="phase-label">准备</span>
+                <span id="dice-label">骰子：--</span>
+              </div>
+              <div class="controls" aria-label="回合控制">
+                <button id="roll-button" type="button">掷骰子</button>
+                <button id="buy-button" type="button">购买</button>
+                <button id="decline-button" type="button">放弃</button>
+                <button id="end-button" type="button">结束回合</button>
+                <button id="new-game-button" type="button" class="ghost-button">重开</button>
+              </div>
+              <p id="offer-text" class="offer-text"></p>
+              <p id="message" class="message" role="status"></p>
+            </section>
+          </div>
+        </div>
+
+        <aside class="side-panel" aria-label="信息面板">
+          <section class="panel-section">
+            <div class="section-heading">
+              <h2>玩家资产</h2>
+              <span id="alive-count">0 人</span>
+            </div>
+            <div id="players" class="players-list"></div>
+          </section>
+
+          <section class="panel-section">
+            <div class="section-heading">
+              <h2>当前玩家地块</h2>
+              <span>可直接升级</span>
+            </div>
+            <div id="properties" class="property-list"></div>
+          </section>
+
+          <section class="panel-section log-section">
+            <div class="section-heading">
+              <h2>事件</h2>
+              <span>最近 12 条</span>
+            </div>
+            <ol id="log" class="event-log"></ol>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="./src/ui.js"></script>
+  </body>
+</html>

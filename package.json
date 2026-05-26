@@ -1,0 +1,11 @@
+{
+  "name": "super-monopoly",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/game.js && node --check src/ui.js",
+    "serve": "python -m http.server 4173"
+  }
+}
