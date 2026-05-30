@@ -9,31 +9,37 @@
   </head>
   <body>
     <main class="app-shell">
+      <div class="language-switcher" style="position: absolute; top: 10px; right: 10px;">
+        <select id="lang-switcher" style="padding: 5px; font-size: 14px;">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
       <section class="hero" aria-labelledby="game-title">
         <div>
-          <p class="eyebrow">local web board game</p>
+          <p class="eyebrow" data-i18n="ui.eyebrow">local web board game</p>
           <h1 id="game-title">Super Monopoly</h1>
-          <p class="hero-copy">12×12 外圈地图，第一格是起始格。经过起始格领钱，买同国家城市，集齐同国色组后建房。</p>
+          <p class="hero-copy" data-i18n="ui.heroCopy">12×12 外圈地图，第一格是起始格。所有城市拆成 10 股，玩家可按股买入、交易、分租、签合同，并用主要持股人与投票规则建设地产。</p>
         </div>
         <form id="setup-form" class="setup-card">
-          <h2>玩家</h2>
-          <label>
+          <h2 data-i18n="ui.players">玩家</h2>
+          <label data-i18n-label="ui.player1">
             玩家 1
             <input name="player" value="玩家 1" maxlength="14" />
           </label>
-          <label>
+          <label data-i18n-label="ui.player2">
             玩家 2
             <input name="player" value="玩家 2" maxlength="14" />
           </label>
-          <label>
+          <label data-i18n-label="ui.player3">
             玩家 3，可选
-            <input name="player" maxlength="14" placeholder="留空则不加入" />
+            <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.playerPlaceholder" />
           </label>
-          <label>
+          <label data-i18n-label="ui.player4">
             玩家 4，可选
-            <input name="player" maxlength="14" placeholder="留空则不加入" />
+            <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.playerPlaceholder" />
           </label>
-          <button class="primary-button" type="submit">开始新游戏</button>
+          <button class="primary-button" type="submit" data-i18n="ui.startGame">开始新游戏</button>
         </form>
       </section>
 
@@ -51,14 +57,26 @@
                 <span id="phase-label">准备</span>
                 <span id="dice-label">骰子：--</span>
               </div>
-              <div class="controls" aria-label="回合控制">
-                <button id="roll-button" type="button">掷骰子</button>
-                <button id="buy-button" type="button">购买</button>
-                <button id="decline-button" type="button">放弃</button>
-                <button id="end-button" type="button">结束回合</button>
-                <button id="new-game-button" type="button" class="ghost-button">重开</button>
+              <div class="controls" aria-label="Turn controls">
+                <button id="roll-button" type="button" data-i18n="ui.buttonRoll">掷骰子</button>
+                <button id="buy-button" type="button" data-i18n="ui.buttonBuy" disabled>购买股份</button>
+                <button id="decline-button" type="button" data-i18n="ui.buttonDecline" disabled>放弃</button>
+                <button id="end-button" type="button" data-i18n="ui.buttonEndTurn" disabled>结束回合</button>
+                <button id="bankruptcy-button" type="button" class="danger-button" data-i18n="ui.buttonBankruptcy" disabled>主动破产</button>
+                <button id="new-game-button" type="button" data-i18n="ui.buttonRestart">重新开始</button>
               </div>
+              <form id="share-purchase-form" class="share-purchase-form" hidden>
+                <label>
+                  购买银行股份
+                  <input id="share-count" type="number" min="1" step="1" value="1" />
+                </label>
+                <span id="share-preview" class="badge">10% · $0</span>
+              </form>
               <p id="offer-text" class="offer-text"></p>
+              <section id="auction-warning" class="status-banner is-warning" hidden>
+                <strong>破产拍卖规则暂未制定</strong>
+                <span>游戏已暂停在拍卖等待状态，请根据补充规则手动处理待拍卖资产后再继续。</span>
+              </section>
               <p id="message" class="message" role="status"></p>
             </section>
           </div>
@@ -75,10 +93,85 @@
 
           <section class="panel-section">
             <div class="section-heading">
-              <h2>当前玩家地块</h2>
-              <span>可直接升级</span>
+              <h2 data-i18n="ui.playerShares">当前玩家股份 / 建设</h2>
+              <span data-i18n="ui.buildDemolishVote">建房 / 拆房 / 投票</span>
             </div>
             <div id="properties" class="property-list"></div>
+          </section>
+
+          <section class="panel-section" aria-labelledby="vote-heading">
+            <div class="section-heading">
+              <h2 id="vote-heading">建房 / 拆房投票</h2>
+              <span>股份加权</span>
+            </div>
+            <div id="votes" class="vote-list"></div>
+          </section>
+
+          <section class="panel-section" aria-labelledby="trade-heading">
+            <div class="section-heading">
+              <h2 id="trade-heading">自由交易</h2>
+              <span>任意阶段</span>
+            </div>
+            <form id="trade-form" class="stacked-form">
+              <div class="form-row two-col">
+                <label>发起方<select id="trade-from"></select></label>
+                <label>接收方<select id="trade-to"></select></label>
+              </div>
+              <div class="form-row two-col">
+                <label>给出现金<input id="trade-offer-cash" type="number" min="0" step="0.1" value="0" /></label>
+                <label>索要现金<input id="trade-request-cash" type="number" min="0" step="0.1" value="0" /></label>
+              </div>
+              <div class="form-row two-col">
+                <label>给出股份<select id="trade-offer-property"></select></label>
+                <label>股数<input id="trade-offer-shares" type="number" min="0" step="1" value="0" /></label>
+              </div>
+              <div class="form-row two-col">
+                <label>索要股份<select id="trade-request-property"></select></label>
+                <label>股数<input id="trade-request-shares" type="number" min="0" step="1" value="0" /></label>
+              </div>
+              <div class="form-row two-col">
+                <label>给出合同 ID<input id="trade-offer-contract" placeholder="例如 c1，可空" /></label>
+                <label>索要合同 ID<input id="trade-request-contract" placeholder="例如 c2，可空" /></label>
+              </div>
+              <label>备注<input id="trade-note" maxlength="80" placeholder="可空" /></label>
+              <button type="submit">发起交易</button>
+            </form>
+            <div id="pending-trades" class="pending-trade-list"></div>
+          </section>
+
+          <section class="panel-section" aria-labelledby="contract-heading">
+            <div class="section-heading">
+              <h2 id="contract-heading">合同</h2>
+              <span>免费通行 / 继承 / 投票支持</span>
+            </div>
+            <form id="contract-form" class="stacked-form">
+              <div class="form-row two-col">
+                <label>类型
+                  <select id="contract-type">
+                    <option value="freePass">免费通行权</option>
+                    <option value="inheritance">继承权</option>
+                    <option value="voteSupport">投票支持</option>
+                  </select>
+                </label>
+                <label>合同持有人<select id="contract-holder"></select></label>
+              </div>
+              <div class="form-row two-col">
+                <label>目标地块<select id="contract-property"></select></label>
+                <label>绑定股数<input id="contract-share-count" type="number" min="1" max="10" step="1" value="1" /></label>
+              </div>
+              <div class="form-row two-col">
+                <label>股份当前持有人<select id="contract-share-owner"></select></label>
+                <label>投票义务人<select id="contract-obligor"></select></label>
+              </div>
+              <label>投票立场
+                <select id="contract-stance">
+                  <option value="yes">支持</option>
+                  <option value="no">反对</option>
+                </select>
+              </label>
+              <button type="submit">创建合同</button>
+            </form>
+            <div id="contracts" class="contract-list"></div>
           </section>
 
           <section class="panel-section log-section">

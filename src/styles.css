@@ -36,7 +36,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -58,7 +60,9 @@ button:hover:not(:disabled) {
 }
 
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid rgba(243, 201, 105, 0.45);
   outline-offset: 3px;
 }
@@ -68,13 +72,19 @@ button:disabled {
   opacity: 0.42;
 }
 
-input {
+input,
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   padding: 0.8rem 0.9rem;
   color: var(--ink);
   background: rgba(255, 255, 255, 0.05);
+}
+
+select {
+  color-scheme: dark;
 }
 
 .app-shell {
@@ -233,6 +243,15 @@ input {
   background: #344154;
 }
 
+.danger-button {
+  color: #fff8f6;
+  background: rgba(255, 112, 102, 0.88);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #ff8a82;
+}
+
 .offer-text,
 .message {
   min-height: 1.3rem;
@@ -243,6 +262,65 @@ input {
 
 .message.is-error {
   color: var(--danger);
+}
+
+.share-purchase-form,
+.stacked-form {
+  display: grid;
+  gap: 10px;
+}
+
+.share-purchase-form {
+  grid-template-columns: minmax(120px, 1fr) auto;
+  align-items: end;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.share-purchase-form[hidden] {
+  display: none;
+}
+
+.share-purchase-form label,
+.stacked-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: left;
+}
+
+.form-row {
+  display: grid;
+  gap: 10px;
+}
+
+.form-row.two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.status-banner {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  text-align: left;
+}
+
+.status-banner[hidden] {
+  display: none;
+}
+
+.status-banner.is-warning {
+  border-color: rgba(255, 112, 102, 0.5);
+  background: rgba(255, 112, 102, 0.11);
+}
+
+.status-banner span {
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .square {
@@ -302,6 +380,21 @@ input {
   align-self: end;
 }
 
+.share-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  overflow: hidden;
+  height: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.share-segment {
+  min-width: 4px;
+}
+
 .token {
   display: inline-grid;
   place-items: center;
@@ -337,13 +430,19 @@ input {
 }
 
 .players-list,
-.property-list {
+.property-list,
+.vote-list,
+.pending-trade-list,
+.contract-list {
   display: grid;
   gap: 10px;
 }
 
 .player-card,
-.property-card {
+.property-card,
+.vote-card,
+.pending-trade-card,
+.contract-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   padding: 12px;
@@ -400,11 +499,62 @@ input {
   border-left: 6px solid var(--stripe, var(--line));
 }
 
+.vote-card,
+.pending-trade-card,
+.contract-card {
+  display: grid;
+  gap: 8px;
+}
+
 .property-detail {
   display: flex;
   justify-content: space-between;
   gap: 10px;
   color: var(--success);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.property-detail.is-column {
+  display: grid;
+  justify-content: stretch;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-row button {
+  flex: 1 1 130px;
+  min-height: 36px;
+  padding: 0.5rem 0.75rem;
+}
+
+.vote-progress {
+  display: flex;
+  overflow: hidden;
+  height: 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.voter-list {
+  display: grid;
+  gap: 8px;
+}
+
+.vote-voter-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -476,6 +626,11 @@ input {
 
   .controls button {
     flex: 1 1 42%;
+  }
+
+  .form-row.two-col,
+  .share-purchase-form {
+    grid-template-columns: 1fr;
   }
 }
 
