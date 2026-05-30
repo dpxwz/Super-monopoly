@@ -53,6 +53,7 @@ export function createRoomStore({
         players: [host],
       },
       game: null,
+      chat: [],
       revision: 1,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -99,6 +100,24 @@ export function createRoomStore({
   function getState(rawCode, clientId = null) {
     const room = requireRoom(rawCode);
     const participant = clientId ? requireClient(room, clientId) : null;
+    return withClient(room, participant);
+  }
+
+  function addChatMessage(rawCode, clientId, { text } = {}) {
+    const room = requireRoom(rawCode);
+    const participant = requireClient(room, clientId);
+    const messageText = normalizeChatText(text);
+    room.chat.push({
+      id: `m${room.revision + 1}-${room.chat.length + 1}`,
+      playerId: participant.playerId,
+      name: participant.name,
+      text: messageText,
+      createdAt: Date.now(),
+    });
+    if (room.chat.length > 80) {
+      room.chat = room.chat.slice(-80);
+    }
+    bump(room);
     return withClient(room, participant);
   }
 
@@ -223,6 +242,7 @@ export function createRoomStore({
     joinRoom,
     startRoom,
     getState,
+    addChatMessage,
     applyAction,
     rooms,
   };
@@ -330,6 +350,7 @@ function publicRoom(room) {
       hostPlayerId: room.lobby.hostPlayerId,
       players: room.lobby.players.map(publicPlayer),
     },
+    chat: room.chat.map(publicChatMessage),
     game: room.game,
   };
 }
@@ -339,6 +360,16 @@ function publicPlayer(player) {
     playerId: player.playerId,
     name: player.name,
     isHost: player.isHost,
+  };
+}
+
+function publicChatMessage(message) {
+  return {
+    id: message.id,
+    playerId: message.playerId,
+    name: message.name,
+    text: message.text,
+    createdAt: message.createdAt,
   };
 }
 
@@ -365,6 +396,14 @@ function makeParticipant(clientId, index, playerName, isHost) {
 function normalizePlayerName(playerName, fallback) {
   const name = String(playerName ?? '').trim();
   return (name || fallback).slice(0, 14);
+}
+
+function normalizeChatText(text) {
+  const normalized = String(text ?? '').trim().replace(/\s+/g, ' ');
+  if (!normalized) {
+    throw new Error('聊天消息不能为空。');
+  }
+  return normalized.slice(0, 160);
 }
 
 function bump(room) {
@@ -406,7 +445,7 @@ function matchApiRoute(pathname) {
   if (pathname === '/api/rooms') {
     return { name: 'rooms' };
   }
-  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|state|actions))?$/);
+  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|state|actions|chat))?$/);
   if (!match) {
     return null;
   }
@@ -448,6 +487,12 @@ async function handleApiRoute({ request, response, route, store, url }) {
   if (route.name === 'actions' && request.method === 'POST') {
     const body = await readJsonBody(request);
     sendJson(response, 200, store.applyAction(route.roomCode, body.clientId, body.action));
+    return;
+  }
+
+  if (route.name === 'chat' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, store.addChatMessage(route.roomCode, body.clientId, { text: body.text }));
     return;
   }
 

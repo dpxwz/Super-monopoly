@@ -53,6 +53,21 @@ test('LAN room store rejects extra players after four seats', () => {
   assert.throws(() => store.joinRoom('FULL1', { playerName: 'D' }), /满|full/i);
 });
 
+test('LAN room chat accepts participant messages and syncs them before the game starts', () => {
+  const store = deterministicStore();
+  store.createRoom({ playerName: 'Ada' });
+  const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
+
+  const posted = store.addChatMessage('ROOM1', guest.clientId, { text: '准备好了，开始吧' });
+
+  assert.equal(posted.room.chat.length, 1);
+  assert.equal(posted.room.chat[0].playerId, 'p2');
+  assert.equal(posted.room.chat[0].name, 'Lin');
+  assert.equal(posted.room.chat[0].text, '准备好了，开始吧');
+  assert.equal(posted.room.revision, 3);
+  assert.throws(() => store.addChatMessage('ROOM1', guest.clientId, { text: '   ' }), /消息|message|空/i);
+});
+
 test('LAN room actions are server-authoritative and bound to the controlling player', () => {
   const store = deterministicStore();
   const host = store.createRoom({ playerName: 'Ada' }).client;

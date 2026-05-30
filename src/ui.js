@@ -102,6 +102,25 @@ const elements = {
   contracts: document.querySelector('#contracts'),
   log: document.querySelector('#log'),
   aliveCount: document.querySelector('#alive-count'),
+  chatForm: document.querySelector('#chat-form'),
+  chatInput: document.querySelector('#chat-input'),
+  chatSend: document.querySelector('#chat-send'),
+  chatLines: document.querySelector('#chat-lines'),
+  chatStatus: document.querySelector('#chat-status'),
+  rightPlayerName: document.querySelector('#right-player-name'),
+  rightPlayerMode: document.querySelector('#right-player-mode'),
+  rightPlayerCash: document.querySelector('#right-player-cash'),
+  rightPlayerAvatar: document.querySelector('#right-player-avatar'),
+  tradeOverlay: document.querySelector('#trade-overlay'),
+  contractOverlay: document.querySelector('#contract-overlay'),
+  playerDetailOverlay: document.querySelector('#player-detail-overlay'),
+  playerDetailName: document.querySelector('#player-detail-name'),
+  playerDetailSummary: document.querySelector('#player-detail-summary'),
+  playerDetailAvatar: document.querySelector('#player-detail-avatar'),
+  playerDetailCash: document.querySelector('#player-detail-cash'),
+  playerDetailStatus: document.querySelector('#player-detail-status'),
+  playerDetailProperties: document.querySelector('#player-detail-properties'),
+  playerDetailContracts: document.querySelector('#player-detail-contracts'),
 };
 
 let game = createGame(['玩家 1', '玩家 2']);
@@ -438,6 +457,50 @@ function bindEvents() {
   });
   elements.contractProperty.addEventListener('change', renderContractFormOptions);
   elements.contractType.addEventListener('change', renderContractFormOptions);
+
+  elements.chatForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    safeAction(async () => {
+      const text = elements.chatInput.value.trim();
+      if (!text) return;
+      await sendLanChat(text);
+      elements.chatInput.value = '';
+      setMessage('聊天消息已发送。');
+    });
+  });
+
+  elements.players.addEventListener('dblclick', (event) => {
+    const playerCard = event.target.closest('[data-player-id]');
+    if (playerCard) {
+      openPlayerDetail(playerCard.dataset.playerId);
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('[data-open-trade]')) {
+      renderTradePanel();
+      openOverlay(elements.tradeOverlay);
+      return;
+    }
+    if (event.target.closest('[data-open-contract]')) {
+      renderContractFormOptions();
+      openOverlay(elements.contractOverlay);
+      return;
+    }
+    if (event.target.closest('[data-close-overlay]')) {
+      closeOverlays();
+      return;
+    }
+    if (event.target.classList?.contains('overlay')) {
+      closeOverlays();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeOverlays();
+    }
+  });
 }
 
 function buySelectedShares() {
@@ -527,6 +590,18 @@ async function sendLanAction(type, payload = {}) {
   const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/actions`, {
     method: 'POST',
     body: { clientId: networkSession.clientId, action: { type, payload } },
+  });
+  applyLanSnapshot(snapshot);
+  return snapshot;
+}
+
+async function sendLanChat(text) {
+  if (!isLanMode() || !networkSession.roomCode || !networkSession.clientId) {
+    throw new Error('聊天室仅在局域网联机模式下启用。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/chat`, {
+    method: 'POST',
+    body: { clientId: networkSession.clientId, text },
   });
   applyLanSnapshot(snapshot);
   return snapshot;
@@ -667,9 +742,11 @@ function renderNetworkPanel() {
 const MAX_PLAYERS_FOR_UI = 4;
 
 function render() {
+  renderModeChrome();
   renderNetworkPanel();
   if (isLanMode() && !isLanStarted()) {
     renderLobbyState();
+    renderChatPanel();
     return;
   }
   if (!isLanMode()) {
@@ -698,6 +775,8 @@ function render() {
   renderVotes();
   renderTradePanel();
   renderContracts();
+  renderFocusedPlayerPanel();
+  renderChatPanel();
   renderBankruptcyWarning();
   renderLog();
 
@@ -724,20 +803,130 @@ function renderLobbyState() {
   elements.offerText.textContent = '';
   elements.sharePurchaseForm.hidden = true;
   elements.players.innerHTML = players.map((player, index) => `
-    <article class="player-card${player.playerId === networkSession.playerId ? ' is-active' : ''}">
+    <article class="player-card${player.playerId === networkSession.playerId ? ' is-active' : ''}" data-player-id="${player.playerId}">
       <div class="card-topline">
-        <strong><span class="player-dot" style="--dot: ${playerColors[index]}"></span>${escapeHtml(player.name)}</strong>
+        <strong><span class="player-avatar" style="--dot: ${playerColors[index]}">${index + 1}</span>${escapeHtml(player.name)}</strong>
         <span class="badge">${player.isHost ? '房主' : '等待'}${player.playerId === networkSession.playerId ? ' · 你' : ''}</span>
       </div>
       <p class="muted">${escapeHtml(player.playerId)}</p>
     </article>
   `).join('') || '<p class="empty-state">还没有玩家加入。</p>';
-  elements.properties.innerHTML = '<p class="empty-state">联机游戏开始后会显示当前玩家股份。</p>';
+  elements.properties.innerHTML = '<p class="empty-state">联机游戏开始后会显示你的地产。</p>';
   elements.votes.innerHTML = '<p class="empty-state">联机游戏开始后会显示投票。</p>';
   elements.pendingTrades.innerHTML = '<p class="empty-state">联机游戏开始后可以交易。</p>';
-  elements.contracts.innerHTML = '<p class="empty-state">联机游戏开始后可以创建合同。</p>';
+  elements.contracts.innerHTML = '<p class="empty-state">联机游戏开始后会显示你的合同。</p>';
   elements.log.innerHTML = '<li>等待房主开始联机游戏。</li>';
+  renderFocusedPlayerPanel();
   window.superMonopolyGame = game;
+}
+
+function renderModeChrome() {
+  document.body.classList.toggle('is-lan-mode', isLanMode());
+  document.body.classList.toggle('is-local-mode', !isLanMode());
+}
+
+function getFocusedPlayer() {
+  if (isLanMode() && networkSession.playerId) {
+    const ownPlayer = game.players.find((player) => player.id === networkSession.playerId);
+    if (ownPlayer) return ownPlayer;
+  }
+  return getCurrentPlayer(game);
+}
+
+function renderFocusedPlayerPanel() {
+  if (!elements.rightPlayerName) return;
+  if (isLanMode() && !isLanStarted()) {
+    const participant = networkSession.room?.lobby?.players?.find((player) => player.playerId === networkSession.playerId);
+    const index = networkSession.room?.lobby?.players?.findIndex((player) => player.playerId === networkSession.playerId) ?? 0;
+    elements.rightPlayerName.textContent = participant ? `你：${participant.name}` : '你';
+    elements.rightPlayerCash.textContent = '等待开始';
+    elements.rightPlayerMode.textContent = '联机大厅中；游戏开始后这里会固定显示你的地产和合同。';
+    elements.rightPlayerAvatar.textContent = participant ? String(index + 1) : '?';
+    elements.rightPlayerAvatar.style.setProperty('--dot', playerColors[Math.max(0, index)] ?? 'var(--accent)');
+    return;
+  }
+
+  const focusPlayer = getFocusedPlayer();
+  const index = game.players.findIndex((player) => player.id === focusPlayer.id);
+  elements.rightPlayerName.textContent = isLanMode() ? `你：${focusPlayer.name}` : `当前回合：${focusPlayer.name}`;
+  elements.rightPlayerCash.textContent = `$${formatMoney(focusPlayer.cash)}`;
+  elements.rightPlayerMode.textContent = isLanMode()
+    ? '联机模式下右侧栏目固定展示你自己的地产和合同。'
+    : '本地模式下右侧栏目跟随当前回合玩家。';
+  elements.rightPlayerAvatar.textContent = String(index + 1);
+  elements.rightPlayerAvatar.style.setProperty('--dot', playerColors[index] ?? 'var(--accent)');
+}
+
+function renderChatPanel() {
+  if (!elements.chatLines) return;
+  const enabled = isLanMode() && Boolean(networkSession.roomCode && networkSession.clientId);
+  elements.chatStatus.textContent = enabled ? '聊天室已启用' : '本地模式禁用';
+  elements.chatInput.disabled = !enabled;
+  elements.chatSend.disabled = !enabled;
+
+  const messages = enabled ? (networkSession.room?.chat ?? []) : [];
+  if (messages.length === 0) {
+    elements.chatLines.innerHTML = enabled
+      ? '<p class="empty-state">还没有聊天消息。</p>'
+      : '<p class="empty-state">进入局域网联机房间后，聊天室会在这里启用。</p>';
+    return;
+  }
+
+  elements.chatLines.innerHTML = messages.slice(-24).map((message) => `
+    <article class="chat-message">
+      <strong>${escapeHtml(message.name ?? playerName(message.playerId))}</strong>
+      <span>${escapeHtml(message.text)}</span>
+    </article>
+  `).join('');
+  elements.chatLines.scrollTop = elements.chatLines.scrollHeight;
+}
+
+function openOverlay(overlay) {
+  if (overlay) overlay.hidden = false;
+}
+
+function closeOverlays() {
+  [elements.tradeOverlay, elements.contractOverlay, elements.playerDetailOverlay].forEach((overlay) => {
+    if (overlay) overlay.hidden = true;
+  });
+}
+
+function openPlayerDetail(playerId) {
+  const player = game.players.find((candidate) => candidate.id === playerId);
+  if (!player || !elements.playerDetailOverlay) return;
+  const index = game.players.findIndex((candidate) => candidate.id === playerId);
+  const holdings = getPlayerPropertyHoldings(game, player.id);
+  const contracts = game.contracts.filter((contract) => contract.holderId === player.id);
+
+  elements.playerDetailName.textContent = `${player.name} 的资产档案`;
+  elements.playerDetailSummary.textContent = `${player.bankrupt ? '已破产' : '存活'} · 位置：${game.board[player.position]?.name ?? '--'}`;
+  elements.playerDetailCash.textContent = `$${formatMoney(player.cash)}`;
+  elements.playerDetailStatus.textContent = player.bankrupt ? t('ui.bankrupt') : (index === game.turn ? t('ui.acting') : t('ui.waiting'));
+  elements.playerDetailAvatar.textContent = String(index + 1);
+  elements.playerDetailAvatar.style.setProperty('--dot', playerColors[index] ?? 'var(--accent)');
+  elements.playerDetailProperties.innerHTML = holdings.length
+    ? holdings.map((holding) => `
+      <article class="property-card" style="--stripe: ${stripeFor(holding.property)}">
+        <div class="card-topline">
+          <strong>${escapeHtml(holding.property.name)}</strong>
+          <span class="badge">${holding.percent}%</span>
+        </div>
+        <p class="muted">${escapeHtml(countryName(holding.property))} · ${escapeHtml(colorName(holding.property))} · 租 $${formatMoney(getSpaceRent(holding.property))}</p>
+      </article>
+    `).join('')
+    : '<p class="empty-state">没有持股地产。</p>';
+  elements.playerDetailContracts.innerHTML = contracts.length
+    ? contracts.map((contract) => `
+      <article class="contract-card">
+        <div class="card-topline">
+          <strong>${escapeHtml(contract.id)} · ${contractTypeLabel(contract.type)}</strong>
+          <span class="badge">${contract.status}</span>
+        </div>
+        <p class="muted">${escapeHtml(contractDetail(contract))}</p>
+      </article>
+    `).join('')
+    : '<p class="empty-state">没有合同。</p>';
+  openOverlay(elements.playerDetailOverlay);
 }
 
 function renderOffer() {
@@ -820,9 +1009,9 @@ function renderPlayers() {
     const bankruptClass = player.bankrupt ? ' is-bankrupt' : '';
 
     return `
-      <article class="player-card${activeClass}${bankruptClass}">
+      <article class="player-card${activeClass}${bankruptClass}" data-player-id="${player.id}">
         <div class="card-topline">
-          <strong><span class="player-dot" style="--dot: ${playerColors[index]}"></span>${escapeHtml(player.name)}</strong>
+          <strong><span class="player-avatar" style="--dot: ${playerColors[index]}">${index + 1}</span>${escapeHtml(player.name)}</strong>
           <span class="badge">${player.bankrupt ? t('ui.bankrupt') : index === game.turn ? t('ui.acting') : t('ui.waiting')}</span>
         </div>
         <div class="card-grid">
@@ -839,27 +1028,29 @@ function renderPlayers() {
 }
 
 function renderProperties() {
+  const focusPlayer = getFocusedPlayer();
   const currentPlayer = getCurrentPlayer(game);
-  const holdings = getPlayerPropertyHoldings(game, currentPlayer.id);
+  const holdings = getPlayerPropertyHoldings(game, focusPlayer.id);
 
   if (holdings.length === 0) {
-    elements.properties.innerHTML = '<p class="empty-state">当前玩家还没有股份。落在银行持股城市时，可以按 10% 为单位买入。</p>';
+    elements.properties.innerHTML = `<p class="empty-state">${escapeHtml(focusPlayer.name)} 还没有股份。落在银行持股城市时，可以按 10% 为单位买入。</p>`;
     return;
   }
 
   elements.properties.innerHTML = holdings.map((holding) => {
     const property = holding.property;
     const group = getColorGroupProperties(game, property.colorGroup);
-    const majorGroup = isColorGroupMajorShareholder(game, property.colorGroup, currentPlayer.id);
-    const ownsGroup = ownsCompleteColorGroup(game, currentPlayer.id, property.colorGroup);
-    const buildEligibility = getBuildEligibility(game, property.id, currentPlayer.id);
-    const demolishEligibility = getDemolishEligibility(game, property.id, currentPlayer.id);
-    const canBuild = canBuildHouse(game, property.id, currentPlayer.id);
-    const canDemolish = canDemolishHouse(game, property.id, currentPlayer.id);
+    const majorGroup = isColorGroupMajorShareholder(game, property.colorGroup, focusPlayer.id);
+    const ownsGroup = ownsCompleteColorGroup(game, focusPlayer.id, property.colorGroup);
+    const buildEligibility = getBuildEligibility(game, property.id, focusPlayer.id);
+    const demolishEligibility = getDemolishEligibility(game, property.id, focusPlayer.id);
+    const canBuild = canBuildHouse(game, property.id, focusPlayer.id);
+    const canDemolish = canDemolishHouse(game, property.id, focusPlayer.id);
     const rent = getSpaceRent(property);
+    const turnLocked = focusPlayer.id !== currentPlayer.id;
     const networkLocked = isLanMode() && currentPlayer.id !== networkSession.playerId;
-    const buildDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || game.phase === 'cashRecovery' || networkLocked;
-    const demolishDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || networkLocked;
+    const buildDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || game.phase === 'cashRecovery' || turnLocked || networkLocked;
+    const demolishDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || turnLocked || networkLocked;
     const shareholders = shareholderText(property);
 
     return `
@@ -1003,11 +1194,13 @@ function renderPendingTrades() {
 
 function renderContracts() {
   renderContractFormOptions();
-  if (game.contracts.length === 0) {
-    elements.contracts.innerHTML = '<p class="empty-state">还没有合同。创建合同后，可将合同 ID 填入交易面板进行转让。</p>';
+  const focusPlayer = getFocusedPlayer();
+  const contracts = game.contracts.filter((contract) => contract.holderId === focusPlayer.id);
+  if (contracts.length === 0) {
+    elements.contracts.innerHTML = `<p class="empty-state">${escapeHtml(focusPlayer.name)} 还没有合同。可点击“创建合同”，或在交易 overlay 中转让合同 ID。</p>`;
     return;
   }
-  elements.contracts.innerHTML = game.contracts.map((contract) => `
+  elements.contracts.innerHTML = contracts.map((contract) => `
     <article class="contract-card">
       <div class="card-topline">
         <strong>${escapeHtml(contract.id)} · ${contractTypeLabel(contract.type)}</strong>
