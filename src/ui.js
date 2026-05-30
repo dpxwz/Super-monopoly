@@ -44,6 +44,19 @@ const bankColor = 'rgba(174, 184, 199, 0.48)';
 
 const elements = {
   setupForm: document.querySelector('#setup-form'),
+  modeRadios: [...document.querySelectorAll('input[name="game-mode"]')],
+  localPlayerFields: [...document.querySelectorAll('[data-local-player-field]')],
+  lanOnlyFields: [...document.querySelectorAll('[data-lan-only]')],
+  lanPlayerName: document.querySelector('#lan-player-name'),
+  roomCode: document.querySelector('#room-code'),
+  networkPanel: document.querySelector('#network-panel'),
+  networkRoomCode: document.querySelector('#network-room-code'),
+  networkPlayers: document.querySelector('#network-players'),
+  networkShareUrl: document.querySelector('#network-share-url'),
+  networkHint: document.querySelector('#network-hint'),
+  networkStatus: document.querySelector('#network-status'),
+  lanStartButton: document.querySelector('#lan-start-button'),
+  lanLeaveButton: document.querySelector('#lan-leave-button'),
   board: document.querySelector('#board'),
   currentPlayer: document.querySelector('#current-player'),
   currentSpace: document.querySelector('#current-space'),
@@ -92,11 +105,23 @@ const elements = {
 };
 
 let game = createGame(['玩家 1', '玩家 2']);
+let networkSession = {
+  mode: 'local',
+  roomCode: null,
+  clientId: null,
+  playerId: null,
+  isHost: false,
+  room: null,
+  pollTimer: null,
+};
 
 // Expose a stable debugging handle for browser smoke tests and manual tabletop adjudication.
 window.superMonopoly = {
   get game() {
     return game;
+  },
+  get networkSession() {
+    return networkSession;
   },
 };
 
@@ -162,26 +187,57 @@ function initLanguageSwitcher() {
   });
 }
 
+applyRoomCodeFromUrl();
 initLanguageSwitcher();
 applyStaticTranslations();
 bindEvents();
+renderModeFields();
 render();
 
 function bindEvents() {
+  elements.modeRadios.forEach((radio) => radio.addEventListener('change', renderModeFields));
+
   elements.setupForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    const names = [...new FormData(elements.setupForm).getAll('player')]
-      .map((name) => String(name).trim())
-      .filter(Boolean);
-    safeAction(() => {
-      game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2']);
-      setMessage(t('msg.newGameStarted'));
+    safeAction(async () => {
+      const formData = new FormData(elements.setupForm);
+      const mode = String(formData.get('game-mode') ?? 'local');
+      if (mode === 'local') {
+        leaveLanSession();
+        const names = [...formData.getAll('player')]
+          .map((name) => String(name).trim())
+          .filter(Boolean);
+        game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2']);
+        setMessage(t('msg.newGameStarted'));
+        return;
+      }
+
+      const playerName = String(formData.get('lan-player-name') || formData.getAll('player')[0] || '玩家').trim();
+      if (mode === 'lan-host') {
+        await createLanRoom(playerName);
+      } else {
+        const code = String(formData.get('room-code') ?? '').trim();
+        await joinLanRoom(code, playerName);
+      }
     });
   });
 
+  elements.lanStartButton?.addEventListener('click', () => {
+    safeAction(async () => {
+      await startLanGame();
+      setMessage('联机游戏已开始。');
+    });
+  });
+
+  elements.lanLeaveButton?.addEventListener('click', () => {
+    leaveLanSession();
+    setMessage('已退出局域网联机，回到本地模式。');
+    render();
+  });
+
   elements.rollButton.addEventListener('click', () => {
-    safeAction(() => {
-      rollAndMove(game);
+    safeAction(async () => {
+      await runGameAction(() => rollAndMove(game), { type: 'roll' });
       const dice = game.lastDice?.join(' + ') ?? '--';
       setMessage(t('msg.diceResult', dice));
     });
@@ -195,31 +251,40 @@ function bindEvents() {
   elements.shareCount.addEventListener('input', renderSharePurchasePreview);
 
   elements.declineButton.addEventListener('click', () => {
-    safeAction(() => {
-      const property = declineCurrentShareOffer(game);
+    safeAction(async () => {
+      const propertyId = game.pendingOffer?.spaceId;
+      await runGameAction(() => declineCurrentShareOffer(game), { type: 'declineOffer' });
+      const property = propertyId ? game.board.find((space) => space.id === propertyId) : null;
       setMessage(property ? t('msg.declinedPurchase', property.name) : t('msg.noSharesToBuy'));
     });
   });
 
   elements.endButton.addEventListener('click', () => {
-    safeAction(() => {
-      endTurn(game);
+    safeAction(async () => {
+      await runGameAction(() => endTurn(game), { type: 'endTurn' });
       setMessage(game.status === 'gameOver' ? t('msg.gameOver') : t('msg.turnTo', getCurrentPlayer(game).name));
     });
   });
 
   elements.bankruptcyButton.addEventListener('click', () => {
-    safeAction(() => {
+    safeAction(async () => {
       const player = getCurrentPlayer(game);
-      declareBankruptcy(game, player.id, { type: 'active', reason: '主动破产' });
+      await runGameAction(() => declareBankruptcy(game, player.id, { type: 'active', reason: '主动破产' }), {
+        type: 'declareBankruptcy',
+        payload: { reason: '主动破产' },
+      });
       setMessage(t('msg.activeBankruptcy', player.name));
     });
   });
 
   elements.newGameButton.addEventListener('click', () => {
-    safeAction(() => {
-      const names = game.players.map((player) => player.name);
-      game = createGame(names);
+    safeAction(async () => {
+      if (isLanMode()) {
+        await sendLanAction('restart');
+      } else {
+        const names = game.players.map((player) => player.name);
+        game = createGame(names);
+      }
       setMessage(t('msg.restartedWithPlayers'));
     });
   });
@@ -230,8 +295,13 @@ function bindEvents() {
     const voteButton = event.target.closest('[data-start-vote]');
     const demolishVoteButton = event.target.closest('[data-start-demolish-vote]');
     if (buildButton) {
-      safeAction(() => {
-        const property = buildHouse(game, buildButton.dataset.build);
+      safeAction(async () => {
+        const propertyId = buildButton.dataset.build;
+        await runGameAction(() => buildHouse(game, propertyId), {
+          type: 'buildHouse',
+          payload: { propertyId },
+        });
+        const property = game.board.find((space) => space.id === propertyId);
         if (game.phase === 'buildPayment') {
           setMessage(t('msg.buildPaymentPending'), true);
         } else {
@@ -240,22 +310,35 @@ function bindEvents() {
       });
     }
     if (demolishButton) {
-      safeAction(() => {
-        const property = demolishHouse(game, demolishButton.dataset.demolish);
+      safeAction(async () => {
+        const propertyId = demolishButton.dataset.demolish;
+        await runGameAction(() => demolishHouse(game, propertyId), {
+          type: 'demolishHouse',
+          payload: { propertyId },
+        });
+        const property = game.board.find((space) => space.id === propertyId);
         setMessage(t('msg.demolished', property.name, property.houses));
       });
     }
     if (voteButton) {
-      safeAction(() => {
-        const vote = startBuildVote(game, voteButton.dataset.startVote);
-        const property = game.board.find((space) => space.id === vote.spaceId);
+      safeAction(async () => {
+        const propertyId = voteButton.dataset.startVote;
+        await runGameAction(() => startBuildVote(game, propertyId), {
+          type: 'startBuildVote',
+          payload: { propertyId },
+        });
+        const property = game.board.find((space) => space.id === propertyId);
         setMessage(t('msg.buildVoteStarted', property.name));
       });
     }
     if (demolishVoteButton) {
-      safeAction(() => {
-        const vote = startDemolishVote(game, demolishVoteButton.dataset.startDemolishVote);
-        const property = game.board.find((space) => space.id === vote.spaceId);
+      safeAction(async () => {
+        const propertyId = demolishVoteButton.dataset.startDemolishVote;
+        await runGameAction(() => startDemolishVote(game, propertyId), {
+          type: 'startDemolishVote',
+          payload: { propertyId },
+        });
+        const property = game.board.find((space) => space.id === propertyId);
         setMessage(t('msg.demolishVoteStarted', property.name));
       });
     }
@@ -265,46 +348,54 @@ function bindEvents() {
     const voteButton = event.target.closest('[data-vote-choice]');
     const resolveButton = event.target.closest('[data-resolve-vote]');
     if (voteButton) {
-      safeAction(() => {
-        castBuildVote(game, voteButton.dataset.voteId, voteButton.dataset.votePlayer, voteButton.dataset.voteChoice);
-        setMessage(t('msg.voteRecorded', playerName(voteButton.dataset.votePlayer)));
+      safeAction(async () => {
+        const voterId = isLanMode() ? networkSession.playerId : voteButton.dataset.votePlayer;
+        await runGameAction(
+          () => castBuildVote(game, voteButton.dataset.voteId, voteButton.dataset.votePlayer, voteButton.dataset.voteChoice),
+          {
+            type: 'castVote',
+            payload: { voteId: voteButton.dataset.voteId, stance: voteButton.dataset.voteChoice },
+          },
+        );
+        setMessage(t('msg.voteRecorded', playerName(voterId)));
       });
     }
     if (resolveButton) {
-      safeAction(() => {
-        const vote = game.pendingVote;
-        const result = resolveBuildVote(game, resolveButton.dataset.resolveVote);
-        const actionText = vote?.type === 'demolish' ? t('button.demolish') : t('button.build');
-        const successText = vote?.type === 'demolish'
-          ? '投票通过，已按股份分配拆房返还费用。'
-          : '投票通过，已尝试按股份分摊建房费用。';
-        setMessage(result.passed ? successText : `${actionText}投票未通过。`);
+      safeAction(async () => {
+        await runGameAction(() => resolveBuildVote(game, resolveButton.dataset.resolveVote), {
+          type: 'resolveVote',
+          payload: { voteId: resolveButton.dataset.resolveVote },
+        });
+        setMessage('投票已结算。');
       });
     }
     const constructionButton = event.target.closest('[data-resolve-construction]');
     if (constructionButton) {
-      safeAction(() => {
-        const result = resolvePendingConstruction(game);
-        setMessage(result?.status === 'collecting' ? t('msg.stillCollecting') : t('msg.constructionSettled'));
+      safeAction(async () => {
+        await runGameAction(() => resolvePendingConstruction(game), { type: 'resolveConstruction' });
+        const stillCollecting = game.pendingConstruction?.status === 'collecting';
+        setMessage(stillCollecting ? t('msg.stillCollecting') : t('msg.constructionSettled'));
       });
     }
   });
 
   elements.tradeForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    safeAction(() => {
-      const fromPlayerId = elements.tradeFrom.value;
+    safeAction(async () => {
+      const fromPlayerId = isLanMode() ? networkSession.playerId : elements.tradeFrom.value;
       const toPlayerId = elements.tradeTo.value;
       const offer = buildTradeAssets(fromPlayerId, elements.tradeOfferProperty, elements.tradeOfferShares, elements.tradeOfferCash, elements.tradeOfferContract);
       const request = buildTradeAssets(toPlayerId, elements.tradeRequestProperty, elements.tradeRequestShares, elements.tradeRequestCash, elements.tradeRequestContract);
-      const trade = proposeTrade(game, {
+      const draft = {
         fromPlayerId,
         toPlayerId,
         offer,
         request,
         note: elements.tradeNote.value,
-      });
-      setMessage(t('msg.tradeProposed', trade.id));
+      };
+      await runGameAction(() => proposeTrade(game, draft), { type: 'proposeTrade', payload: draft });
+      const trade = game.pendingTrades.at(-1);
+      setMessage(t('msg.tradeProposed', trade?.id ?? ''));
     });
   });
 
@@ -312,15 +403,23 @@ function bindEvents() {
     const acceptButton = event.target.closest('[data-accept-trade]');
     const rejectButton = event.target.closest('[data-reject-trade]');
     if (acceptButton) {
-      safeAction(() => {
-        const trade = acceptTrade(game, acceptButton.dataset.acceptTrade, Date.now());
-        setMessage(t('msg.tradeAccepted', trade.id));
+      safeAction(async () => {
+        const tradeId = acceptButton.dataset.acceptTrade;
+        await runGameAction(() => acceptTrade(game, tradeId, Date.now()), {
+          type: 'acceptTrade',
+          payload: { tradeId },
+        });
+        setMessage(t('msg.tradeAccepted', tradeId));
       });
     }
     if (rejectButton) {
-      safeAction(() => {
-        const trade = rejectTrade(game, rejectButton.dataset.rejectTrade);
-        setMessage(t('msg.tradeRejected', trade.id));
+      safeAction(async () => {
+        const tradeId = rejectButton.dataset.rejectTrade;
+        await runGameAction(() => rejectTrade(game, tradeId), {
+          type: 'rejectTrade',
+          payload: { tradeId },
+        });
+        setMessage(t('msg.tradeRejected', tradeId));
       });
     }
   });
@@ -330,9 +429,11 @@ function bindEvents() {
 
   elements.contractForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    safeAction(() => {
-      const contract = createContractFromForm();
-      setMessage(t('msg.contractCreated', contract.id));
+    safeAction(async () => {
+      const payload = buildContractPayloadFromForm();
+      await runGameAction(() => createContractFromPayload(payload), { type: 'createContract', payload });
+      const contract = game.contracts.at(-1);
+      setMessage(t('msg.contractCreated', contract?.id ?? ''));
     });
   });
   elements.contractProperty.addEventListener('change', renderContractFormOptions);
@@ -340,16 +441,21 @@ function bindEvents() {
 }
 
 function buySelectedShares() {
-  safeAction(() => {
+  safeAction(async () => {
     const shareCount = Number(elements.shareCount.value);
-    const property = buyCurrentShares(game, shareCount);
-    setMessage(t('msg.boughtShares', property.name, shareCount * SHARE_PERCENT));
+    const propertyId = game.pendingOffer?.spaceId;
+    await runGameAction(() => buyCurrentShares(game, shareCount), {
+      type: 'buyShares',
+      payload: { shareCount },
+    });
+    const property = propertyId ? game.board.find((space) => space.id === propertyId) : null;
+    setMessage(property ? t('msg.boughtShares', property.name, shareCount * SHARE_PERCENT) : t('msg.noSharesToBuy'));
   });
 }
 
-function safeAction(action) {
+async function safeAction(action) {
   try {
-    action();
+    await action();
     render();
   } catch (error) {
     setMessage(error.message, true);
@@ -357,8 +463,218 @@ function safeAction(action) {
   }
 }
 
+function isLanMode() {
+  return networkSession.mode === 'lan';
+}
+
+function isLanStarted() {
+  return isLanMode() && networkSession.room?.lobby?.started === true && Boolean(networkSession.room?.game);
+}
+
+function canControlCurrentPlayer() {
+  return !isLanMode() || (isLanStarted() && getCurrentPlayer(game).id === networkSession.playerId);
+}
+
+function canVoteFor(playerId) {
+  return !isLanMode() || playerId === networkSession.playerId;
+}
+
+async function runGameAction(localAction, lanAction) {
+  if (isLanMode()) {
+    return sendLanAction(lanAction.type, lanAction.payload ?? {});
+  }
+  return localAction();
+}
+
+async function createLanRoom(playerName) {
+  const snapshot = await apiRequest('/api/rooms', {
+    method: 'POST',
+    body: { playerName },
+  });
+  applyLanSnapshot(snapshot);
+  startLanPolling();
+  setMessage(`已创建局域网房间 ${networkSession.roomCode}，等待其他玩家加入。`);
+}
+
+async function joinLanRoom(roomCode, playerName) {
+  if (!roomCode) {
+    throw new Error('请输入要加入的局域网房间号。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(roomCode)}/join`, {
+    method: 'POST',
+    body: { playerName },
+  });
+  applyLanSnapshot(snapshot);
+  startLanPolling();
+  setMessage(`已加入局域网房间 ${networkSession.roomCode}，等待房主开始。`);
+}
+
+async function startLanGame() {
+  if (!networkSession.roomCode || !networkSession.clientId) {
+    throw new Error('还没有加入局域网房间。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/start`, {
+    method: 'POST',
+    body: { clientId: networkSession.clientId },
+  });
+  applyLanSnapshot(snapshot);
+}
+
+async function sendLanAction(type, payload = {}) {
+  if (!networkSession.roomCode || !networkSession.clientId) {
+    throw new Error('还没有加入局域网房间。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/actions`, {
+    method: 'POST',
+    body: { clientId: networkSession.clientId, action: { type, payload } },
+  });
+  applyLanSnapshot(snapshot);
+  return snapshot;
+}
+
+async function pollLanState() {
+  if (!networkSession.roomCode || !networkSession.clientId) {
+    return;
+  }
+  try {
+    const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/state?clientId=${encodeURIComponent(networkSession.clientId)}`);
+    const previousRevision = networkSession.room?.revision;
+    applyLanSnapshot(snapshot);
+    if (networkSession.room?.revision !== previousRevision) {
+      render();
+    } else {
+      renderNetworkPanel();
+    }
+  } catch (error) {
+    setMessage(`联机同步失败：${error.message}`, true);
+    renderNetworkPanel();
+  }
+}
+
+function startLanPolling() {
+  stopLanPolling();
+  networkSession.pollTimer = window.setInterval(pollLanState, 1000);
+}
+
+function stopLanPolling() {
+  if (networkSession.pollTimer) {
+    window.clearInterval(networkSession.pollTimer);
+  }
+  networkSession.pollTimer = null;
+}
+
+function leaveLanSession() {
+  stopLanPolling();
+  networkSession = {
+    mode: 'local',
+    roomCode: null,
+    clientId: null,
+    playerId: null,
+    isHost: false,
+    room: null,
+    pollTimer: null,
+  };
+  elements.modeRadios.forEach((radio) => {
+    radio.checked = radio.value === 'local';
+  });
+  renderModeFields();
+}
+
+function applyLanSnapshot(snapshot) {
+  const client = snapshot.client ?? networkSession;
+  networkSession = {
+    ...networkSession,
+    mode: 'lan',
+    roomCode: snapshot.roomCode ?? snapshot.room?.roomCode ?? networkSession.roomCode,
+    clientId: client.clientId ?? networkSession.clientId,
+    playerId: client.playerId ?? networkSession.playerId,
+    isHost: client.isHost ?? networkSession.isHost,
+    room: snapshot.room ?? networkSession.room,
+  };
+  if (networkSession.room?.game) {
+    game = networkSession.room.game;
+  }
+}
+
+async function apiRequest(path, { method = 'GET', body } = {}) {
+  const response = await fetch(path, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error ?? `HTTP ${response.status}`);
+  }
+  return data;
+}
+
+function applyRoomCodeFromUrl() {
+  const code = new URLSearchParams(window.location.search).get('room');
+  if (!code) return;
+  const joinRadio = elements.modeRadios.find((radio) => radio.value === 'lan-join');
+  if (joinRadio) joinRadio.checked = true;
+  if (elements.roomCode) elements.roomCode.value = code.toUpperCase();
+}
+
+function renderModeFields() {
+  const mode = elements.modeRadios.find((radio) => radio.checked)?.value ?? 'local';
+  const isLan = mode.startsWith('lan-');
+  const isJoin = mode === 'lan-join';
+  elements.localPlayerFields.forEach((field) => {
+    field.hidden = isLan;
+  });
+  elements.lanOnlyFields.forEach((field) => {
+    const fieldMode = field.dataset.lanOnly;
+    field.hidden = !isLan || (fieldMode === 'join' && !isJoin);
+  });
+  if (elements.lanPlayerName && !elements.lanPlayerName.value) {
+    const firstPlayer = elements.setupForm.querySelector('input[name="player"]');
+    elements.lanPlayerName.value = firstPlayer?.value ?? '玩家 1';
+  }
+  renderNetworkPanel();
+}
+
+function renderNetworkPanel() {
+  if (!elements.networkPanel || !elements.networkStatus) {
+    return;
+  }
+  if (!isLanMode()) {
+    elements.networkPanel.hidden = true;
+    elements.networkStatus.textContent = '本地模式';
+    return;
+  }
+
+  const room = networkSession.room;
+  const players = room?.lobby?.players ?? [];
+  const shareUrl = networkSession.roomCode ? `${window.location.origin}${window.location.pathname}?room=${networkSession.roomCode}` : '';
+  elements.networkPanel.hidden = false;
+  elements.networkRoomCode.textContent = networkSession.roomCode ?? '--';
+  elements.networkShareUrl.value = shareUrl;
+  elements.networkPlayers.innerHTML = players
+    .map((player) => `<span class="badge">${escapeHtml(player.name)}${player.playerId === networkSession.playerId ? '（你）' : ''}${player.isHost ? ' · 房主' : ''}</span>`)
+    .join('');
+  elements.networkHint.textContent = room?.lobby?.started
+    ? `联机游戏进行中。你控制 ${networkPlayerName(networkSession.playerId)}。`
+    : `已加入 ${players.length}/${MAX_PLAYERS_FOR_UI} 人。把链接发给同一局域网内的玩家；如果链接里是 127.0.0.1，请改用终端里 npm run serve 打印的局域网地址。`;
+  elements.networkStatus.textContent = room?.lobby?.started
+    ? `局域网 ${networkSession.roomCode} · 你是 ${networkPlayerName(networkSession.playerId)}`
+    : `局域网大厅 ${networkSession.roomCode}`;
+  elements.lanStartButton.hidden = !networkSession.isHost || room?.lobby?.started;
+  elements.lanStartButton.disabled = players.length < 2;
+}
+
+const MAX_PLAYERS_FOR_UI = 4;
+
 function render() {
-  expirePendingTrades(game, Date.now());
+  renderNetworkPanel();
+  if (isLanMode() && !isLanStarted()) {
+    renderLobbyState();
+    return;
+  }
+  if (!isLanMode()) {
+    expirePendingTrades(game, Date.now());
+  }
   const currentPlayer = getCurrentPlayer(game);
   const currentSpace = game.board[currentPlayer.position];
   const alivePlayers = game.players.filter((player) => !player.bankrupt);
@@ -385,6 +701,42 @@ function render() {
   renderBankruptcyWarning();
   renderLog();
 
+  window.superMonopolyGame = game;
+}
+
+function renderLobbyState() {
+  const players = networkSession.room?.lobby?.players ?? [];
+  elements.currentPlayer.textContent = '局域网大厅';
+  elements.currentSpace.textContent = networkSession.roomCode
+    ? `房间 ${networkSession.roomCode} · 已加入 ${players.length}/${MAX_PLAYERS_FOR_UI} 人`
+    : '选择创建或加入局域网房间。';
+  elements.roundLabel.textContent = '等待开始';
+  elements.phaseLabel.textContent = networkSession.isHost ? '房主可开始' : '等待房主';
+  elements.diceLabel.textContent = networkSession.playerId ? `你是 ${networkSession.playerId}` : '未加入';
+  elements.aliveCount.textContent = `${players.length} 人已加入`;
+  renderBoard();
+  elements.rollButton.disabled = true;
+  elements.buyButton.disabled = true;
+  elements.declineButton.disabled = true;
+  elements.endButton.disabled = true;
+  elements.bankruptcyButton.disabled = true;
+  elements.newGameButton.disabled = true;
+  elements.offerText.textContent = '';
+  elements.sharePurchaseForm.hidden = true;
+  elements.players.innerHTML = players.map((player, index) => `
+    <article class="player-card${player.playerId === networkSession.playerId ? ' is-active' : ''}">
+      <div class="card-topline">
+        <strong><span class="player-dot" style="--dot: ${playerColors[index]}"></span>${escapeHtml(player.name)}</strong>
+        <span class="badge">${player.isHost ? '房主' : '等待'}${player.playerId === networkSession.playerId ? ' · 你' : ''}</span>
+      </div>
+      <p class="muted">${escapeHtml(player.playerId)}</p>
+    </article>
+  `).join('') || '<p class="empty-state">还没有玩家加入。</p>';
+  elements.properties.innerHTML = '<p class="empty-state">联机游戏开始后会显示当前玩家股份。</p>';
+  elements.votes.innerHTML = '<p class="empty-state">联机游戏开始后会显示投票。</p>';
+  elements.pendingTrades.innerHTML = '<p class="empty-state">联机游戏开始后可以交易。</p>';
+  elements.contracts.innerHTML = '<p class="empty-state">联机游戏开始后可以创建合同。</p>';
+  elements.log.innerHTML = '<li>等待房主开始联机游戏。</li>';
   window.superMonopolyGame = game;
 }
 
@@ -420,11 +772,14 @@ function renderControls() {
   const currentPlayer = getCurrentPlayer(game);
   const processPaused = game.phase === 'auctionPending' || game.phase === 'buildPayment';
   const cashLocked = !currentPlayer.bankrupt && currentPlayer.cash <= 0;
-  elements.rollButton.disabled = game.phase !== 'roll' || game.status === 'gameOver' || cashLocked;
-  elements.buyButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused || cashLocked;
-  elements.declineButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused;
-  elements.endButton.disabled = game.phase === 'roll' || hasOffer || game.status === 'gameOver' || processPaused || game.phase === 'vote' || cashLocked;
-  elements.bankruptcyButton.disabled = game.status === 'gameOver' || game.phase === 'auctionPending' || currentPlayer.bankrupt;
+  const networkLocked = isLanMode() && (!isLanStarted() || currentPlayer.id !== networkSession.playerId);
+  const networkOfferLocked = isLanMode() && game.pendingOffer?.playerId !== networkSession.playerId;
+  elements.rollButton.disabled = game.phase !== 'roll' || game.status === 'gameOver' || cashLocked || networkLocked;
+  elements.buyButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused || cashLocked || networkLocked || networkOfferLocked;
+  elements.declineButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused || networkLocked || networkOfferLocked;
+  elements.endButton.disabled = game.phase === 'roll' || hasOffer || game.status === 'gameOver' || processPaused || game.phase === 'vote' || cashLocked || networkLocked;
+  elements.bankruptcyButton.disabled = game.status === 'gameOver' || game.phase === 'auctionPending' || currentPlayer.bankrupt || networkLocked;
+  elements.newGameButton.disabled = isLanMode() && (!networkSession.isHost || !isLanStarted());
 }
 
 function renderBoard() {
@@ -468,7 +823,7 @@ function renderPlayers() {
       <article class="player-card${activeClass}${bankruptClass}">
         <div class="card-topline">
           <strong><span class="player-dot" style="--dot: ${playerColors[index]}"></span>${escapeHtml(player.name)}</strong>
-          <span class="badge">${player.bankrupt ? t('button.bankrupt') : index === game.turn ? t('phase.action') : t('ui.waiting')}</span>
+          <span class="badge">${player.bankrupt ? t('ui.bankrupt') : index === game.turn ? t('ui.acting') : t('ui.waiting')}</span>
         </div>
         <div class="card-grid">
           <span><b>$${formatMoney(player.cash)}</b>现金</span>
@@ -502,8 +857,9 @@ function renderProperties() {
     const canBuild = canBuildHouse(game, property.id, currentPlayer.id);
     const canDemolish = canDemolishHouse(game, property.id, currentPlayer.id);
     const rent = getSpaceRent(property);
-    const buildDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || game.phase === 'cashRecovery';
-    const demolishDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote';
+    const networkLocked = isLanMode() && currentPlayer.id !== networkSession.playerId;
+    const buildDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || game.phase === 'cashRecovery' || networkLocked;
+    const demolishDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || networkLocked;
     const shareholders = shareholderText(property);
 
     return `
@@ -544,7 +900,7 @@ function renderVotes() {
           ${construction.costAllocations.map((allocation) => `<span>${escapeHtml(playerName(allocation.playerId))}: ${allocation.shareCount * SHARE_PERCENT}% · 应付 $${formatMoney(allocation.amount)}${construction.insufficientPlayerIds.includes(allocation.playerId) ? ' · 现金不足' : ''}</span>`).join('')}
         </div>
         <div class="action-row">
-          <button type="button" data-resolve-construction="${construction.id}">重试结算建房费用</button>
+          <button type="button" data-resolve-construction="${construction.id}" ${canControlCurrentPlayer() ? '' : 'disabled'}>重试结算建房费用</button>
         </div>
       </article>
     `;
@@ -557,16 +913,16 @@ function renderVotes() {
     return;
   }
   const property = game.board.find((space) => space.id === vote.spaceId);
-  const actionText = vote.type === 'demolish' ? t('button.demolish') : t('button.build');
+  const actionText = vote.type === 'demolish' ? t('action.demolish') : t('action.build');
   const totals = voteTotals(vote);
   const shareholders = getPropertyShareholders(game, property.id);
   const voterRows = shareholders.map((holder) => {
     const forced = forcedVoteStanceForUi(holder.playerId, property.id, vote.type);
     const recorded = vote.votes[holder.playerId];
-    const canVote = vote.status === 'open' && game.status !== 'gameOver';
+    const canVote = vote.status === 'open' && game.status !== 'gameOver' && canVoteFor(holder.playerId);
     return `
       <div class="vote-voter-row">
-        <span>${escapeHtml(playerName(holder.playerId))} · ${holder.percent}%${forced ? ` · 合同强制${forced === 'yes' ? t('vote.yes') : t('vote.no')}` : ''}${recorded ? ` · 已投${recorded === 'yes' ? t('vote.yes') : t('vote.no')}` : ''}</span>
+        <span>${escapeHtml(playerName(holder.playerId))} · ${holder.percent}%${forced ? ` · 合同强制${forced === 'yes' ? t('ui.support') : t('ui.oppose')}` : ''}${recorded ? ` · 已投${recorded === 'yes' ? t('ui.support') : t('ui.oppose')}` : ''}</span>
         <span class="action-row">
           <button type="button" data-vote-id="${vote.id}" data-vote-player="${holder.playerId}" data-vote-choice="yes" ${canVote ? '' : 'disabled'}>支持</button>
           <button type="button" data-vote-id="${vote.id}" data-vote-player="${holder.playerId}" data-vote-choice="no" ${canVote ? '' : 'disabled'}>反对</button>
@@ -589,14 +945,21 @@ function renderVotes() {
       <p class="muted">${actionText}同意 ${totals.yes * SHARE_PERCENT}% / 通过门槛 50%。股东：${escapeHtml(shareholderText(property))}</p>
       <div class="voter-list">${voterRows}</div>
       <div class="action-row">
-        <button type="button" data-resolve-vote="${vote.id}" ${vote.status === 'open' ? '' : 'disabled'}>结算投票</button>
+        <button type="button" data-resolve-vote="${vote.id}" ${vote.status === 'open' && canControlCurrentPlayer() ? '' : 'disabled'}>结算投票</button>
       </div>
     </article>
   `;
 }
 
 function renderTradePanel() {
-  populatePlayerSelect(elements.tradeFrom, elements.tradeFrom.value || getCurrentPlayer(game).id);
+  const ownPlayerId = isLanMode() ? networkSession.playerId : null;
+  populatePlayerSelect(elements.tradeFrom, ownPlayerId || elements.tradeFrom.value || getCurrentPlayer(game).id);
+  if (ownPlayerId) {
+    elements.tradeFrom.value = ownPlayerId;
+    elements.tradeFrom.disabled = true;
+  } else {
+    elements.tradeFrom.disabled = false;
+  }
   const fallbackTo = game.players.find((player) => player.id !== elements.tradeFrom.value)?.id ?? game.players[0].id;
   populatePlayerSelect(elements.tradeTo, elements.tradeTo.value || fallbackTo);
   if (elements.tradeFrom.value === elements.tradeTo.value) {
@@ -617,7 +980,10 @@ function renderPendingTrades() {
     elements.pendingTrades.innerHTML = '<p class="empty-state">还没有待处理交易。交易可在任意阶段发起；接受时会重新校验资产仍可用。</p>';
     return;
   }
-  elements.pendingTrades.innerHTML = trades.map((trade) => `
+  elements.pendingTrades.innerHTML = trades.map((trade) => {
+    const canAcceptTrade = trade.status === 'pending' && (!isLanMode() || trade.toPlayerId === networkSession.playerId);
+    const canRejectTrade = trade.status === 'pending' && (!isLanMode() || [trade.fromPlayerId, trade.toPlayerId].includes(networkSession.playerId));
+    return `
     <article class="pending-trade-card">
       <div class="card-topline">
         <strong>${escapeHtml(playerName(trade.fromPlayerId))} ⇄ ${escapeHtml(playerName(trade.toPlayerId))}</strong>
@@ -627,11 +993,12 @@ function renderPendingTrades() {
       <p class="muted">索要：${escapeHtml(assetSummary(trade.request))}</p>
       ${trade.note ? `<p class="muted">备注：${escapeHtml(trade.note)}</p>` : ''}
       <div class="action-row">
-        <button type="button" data-accept-trade="${trade.id}" ${trade.status === 'pending' ? '' : 'disabled'}>接受</button>
-        <button type="button" data-reject-trade="${trade.id}" ${trade.status === 'pending' ? '' : 'disabled'}>拒绝</button>
+        <button type="button" data-accept-trade="${trade.id}" ${canAcceptTrade ? '' : 'disabled'}>接受</button>
+        <button type="button" data-reject-trade="${trade.id}" ${canRejectTrade ? '' : 'disabled'}>拒绝</button>
       </div>
     </article>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderContracts() {
@@ -679,17 +1046,18 @@ function setMessage(message, isError = false) {
   elements.message.classList.toggle('is-error', isError);
 }
 
-function createContractFromForm() {
+function buildContractPayloadFromForm() {
   const type = elements.contractType.value;
   const holderId = elements.contractHolder.value;
   const propertyId = elements.contractProperty.value;
   if (type === CONTRACT_TYPES.VOTE_SUPPORT) {
-    return createVoteSupportContract(game, {
+    return {
+      type,
       holderId,
       obligorId: elements.contractObligor.value,
       targetSpaceId: propertyId,
       stance: elements.contractStance.value,
-    });
+    };
   }
 
   const ownerId = elements.contractShareOwner.value;
@@ -698,10 +1066,26 @@ function createContractFromForm() {
   if (shareRefs.length < count) {
     throw new Error('该股份持有人没有足够股份可绑定合同。');
   }
-  if (type === CONTRACT_TYPES.FREE_PASS) {
-    return createFreePassContract(game, { holderId, shareRefs });
+  return {
+    type,
+    holderId,
+    shareRefs,
+  };
+}
+
+function createContractFromPayload(payload) {
+  if (payload.type === CONTRACT_TYPES.VOTE_SUPPORT) {
+    return createVoteSupportContract(game, {
+      holderId: payload.holderId,
+      obligorId: payload.obligorId,
+      targetSpaceId: payload.targetSpaceId,
+      stance: payload.stance,
+    });
   }
-  return createInheritanceContract(game, { holderId, shareRefs });
+  if (payload.type === CONTRACT_TYPES.FREE_PASS) {
+    return createFreePassContract(game, { holderId: payload.holderId, shareRefs: payload.shareRefs });
+  }
+  return createInheritanceContract(game, { holderId: payload.holderId, shareRefs: payload.shareRefs });
 }
 
 function buildTradeAssets(ownerId, propertySelect, sharesInput, cashInput, contractInput) {
@@ -785,7 +1169,7 @@ function forcedVoteStanceForUi(playerId, targetSpaceId, voteType) {
 
 function shareholderText(property) {
   return getPropertyShareholders(game, property.id, { includeBank: true })
-    .map((holder) => `${holder.playerId === BANK_ID ? t('label.bank') : playerName(holder.playerId)} ${holder.percent}%`)
+    .map((holder) => `${holder.playerId === BANK_ID ? t('entity.bank') : playerName(holder.playerId)} ${holder.percent}%`)
     .join('，') || '无';
 }
 
@@ -793,7 +1177,7 @@ function shareBarMarkup(property) {
   const holders = getPropertyShareholders(game, property.id, { includeBank: true });
   return `
     <div class="share-bar" aria-label="股份分布">
-      ${holders.map((holder) => `<span class="share-segment" title="${escapeHtml(holder.playerId === BANK_ID ? t('label.bank') : playerName(holder.playerId))} ${holder.percent}%" style="flex: ${holder.shareCount}; background: ${holderColor(holder.playerId)}"></span>`).join('')}
+      ${holders.map((holder) => `<span class="share-segment" title="${escapeHtml(holder.playerId === BANK_ID ? t('entity.bank') : playerName(holder.playerId))} ${holder.percent}%" style="flex: ${holder.shareCount}; background: ${holderColor(holder.playerId)}"></span>`).join('')}
     </div>
   `;
 }
@@ -848,14 +1232,14 @@ function demolishEligibilityLabel(eligibility) {
 
 function phaseText(phase) {
   return {
-    roll: t('phase.roll'),
-    action: '等待购买决定',
-    end: '可结束回合',
-    vote: '建房/拆房投票中',
-    buildPayment: '建房费用待支付',
-    cashRecovery: '现金为负，等待自救',
-    auctionPending: '破产拍卖待制定',
-    gameOver: t('message.gameOver'),
+    roll: t('ui.phase.roll'),
+    action: t('ui.phase.action'),
+    end: t('ui.phase.end'),
+    vote: t('ui.phase.vote'),
+    buildPayment: t('ui.phase.buildPayment'),
+    cashRecovery: t('ui.phase.cashRecovery'),
+    auctionPending: t('ui.phase.auctionPending'),
+    gameOver: t('ui.phase.gameOver'),
   }[phase] ?? phase;
 }
 
@@ -870,8 +1254,8 @@ function contractTypeLabel(type) {
 function contractDetail(contract) {
   if (contract.type === CONTRACT_TYPES.VOTE_SUPPORT) {
     const property = game.board.find((space) => space.id === contract.targetSpaceId);
-    const actionText = contract.voteType === 'demolish' ? t('button.demolish') : t('button.build');
-    return `${playerName(contract.obligorId)} 下一次 ${property?.name ?? contract.targetSpaceId} ${actionText}投票必须${contract.stance === 'yes' ? t('vote.yes') : t('vote.no')}；剩余 ${contract.remainingUses} 次。`;
+    const actionText = contract.voteType === 'demolish' ? t('action.demolish') : t('action.build');
+    return `${playerName(contract.obligorId)} 下一次 ${property?.name ?? contract.targetSpaceId} ${actionText}投票必须${contract.stance === 'yes' ? t('ui.support') : t('ui.oppose')}；剩余 ${contract.remainingUses} 次。`;
   }
   const refs = contract.shareRefs ?? [];
   const property = refs[0] ? game.board.find((space) => space.id === refs[0].spaceId) : null;
@@ -886,8 +1270,12 @@ function assetSummary(assets) {
   return parts.join(' + ') || '无';
 }
 
+function networkPlayerName(playerId) {
+  return networkSession.room?.lobby?.players?.find((player) => player.playerId === playerId)?.name ?? playerName(playerId);
+}
+
 function playerName(playerId) {
-  if (playerId === BANK_ID) return t('label.bank');
+  if (playerId === BANK_ID) return t('entity.bank');
   return game.players.find((player) => player.id === playerId)?.name ?? playerId;
 }
 
@@ -933,19 +1321,3 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
-
-
-// Language switcher
-document.getElementById('lang-switcher')?.addEventListener('change', (e) => {
-  setLocale(e.target.value);
-  render(); // Re-render UI with new locale
-});
-
-
-// Language switcher handler
-document.getElementById('lang-switcher')?.addEventListener('change', (e) => {
-  setLocale(e.target.value);
-  // Recreate game with new locale names
-  gameState = createGame([t('ui.player1') || '玩家1', t('ui.player2') || '玩家2']);
-  render();
-});

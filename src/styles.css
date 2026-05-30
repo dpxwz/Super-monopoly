@@ -25,6 +25,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
@@ -153,6 +157,65 @@ select {
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 700;
+}
+
+.mode-selector {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.mode-selector legend {
+  padding: 0 6px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.mode-option {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mode-option input {
+  width: auto;
+  margin-top: 4px;
+}
+
+.mode-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.mode-option small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.network-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(123, 216, 143, 0.42);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: rgba(123, 216, 143, 0.08);
+}
+
+.network-panel[hidden] {
+  display: none;
+}
+
+.network-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .primary-button {

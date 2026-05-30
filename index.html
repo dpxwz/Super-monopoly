@@ -22,24 +22,63 @@
           <p class="hero-copy" data-i18n="ui.heroCopy">12×12 外圈地图，第一格是起始格。所有城市拆成 10 股，玩家可按股买入、交易、分租、签合同，并用主要持股人与投票规则建设地产。</p>
         </div>
         <form id="setup-form" class="setup-card">
-          <h2 data-i18n="ui.players">玩家</h2>
-          <label data-i18n-label="ui.player1">
+          <h2 data-i18n="ui.players">开始游戏</h2>
+          <fieldset class="mode-selector" aria-label="开始模式">
+            <legend>选择模式</legend>
+            <label class="mode-option">
+              <input type="radio" name="game-mode" value="local" checked />
+              <span><strong>本地模式</strong><small>同一台设备上轮流操作。</small></span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="game-mode" value="lan-host" />
+              <span><strong>局域网联机：创建房间</strong><small>启动本机服务器后，其他设备用链接加入。</small></span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="game-mode" value="lan-join" />
+              <span><strong>局域网联机：加入房间</strong><small>输入房主给你的房间号。</small></span>
+            </label>
+          </fieldset>
+          <label data-local-player-field data-i18n-label="ui.player1">
             玩家 1
             <input name="player" value="玩家 1" maxlength="14" />
           </label>
-          <label data-i18n-label="ui.player2">
+          <label data-local-player-field data-i18n-label="ui.player2">
             玩家 2
             <input name="player" value="玩家 2" maxlength="14" />
           </label>
-          <label data-i18n-label="ui.player3">
+          <label data-local-player-field data-i18n-label="ui.player3">
             玩家 3，可选
             <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.playerPlaceholder" />
           </label>
-          <label data-i18n-label="ui.player4">
+          <label data-local-player-field data-i18n-label="ui.player4">
             玩家 4，可选
             <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.playerPlaceholder" />
           </label>
-          <button class="primary-button" type="submit" data-i18n="ui.startGame">开始新游戏</button>
+          <label data-lan-only>
+            你的联机昵称
+            <input id="lan-player-name" name="lan-player-name" value="玩家 1" maxlength="14" />
+          </label>
+          <label data-lan-only="join">
+            房间号
+            <input id="room-code" name="room-code" maxlength="8" placeholder="例如 ABC12" />
+          </label>
+          <button class="primary-button" type="submit" data-i18n="ui.startGame">开始 / 加入</button>
+          <section id="network-panel" class="network-panel" hidden>
+            <div class="card-topline">
+              <strong>局域网房间 <span id="network-room-code">--</span></strong>
+              <span id="network-status" class="badge">本地模式</span>
+            </div>
+            <label>
+              加入链接
+              <input id="network-share-url" readonly value="" />
+            </label>
+            <div id="network-players" class="network-players"></div>
+            <p id="network-hint" class="muted">创建或加入房间后会显示联机状态。</p>
+            <div class="action-row">
+              <button id="lan-start-button" type="button">开始联机游戏</button>
+              <button id="lan-leave-button" type="button" class="ghost-button">退出联机</button>
+            </div>
+          </section>
         </form>
       </section>
 
