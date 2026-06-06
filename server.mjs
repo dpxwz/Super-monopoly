@@ -19,6 +19,7 @@ import {
   declareBankruptcy,
   demolishHouse,
   endTurn,
+  expirePendingTrades,
   getCurrentPlayer,
   proposeTrade,
   rejectTrade,
@@ -37,6 +38,7 @@ const DEFAULT_PORT = 4173;
 export function createRoomStore({
   createCode = randomRoomCode,
   createClientId = randomClientId,
+  rollDice = null,
 } = {}) {
   const rooms = new Map();
 
@@ -100,6 +102,9 @@ export function createRoomStore({
   function getState(rawCode, clientId = null) {
     const room = requireRoom(rawCode);
     const participant = clientId ? requireClient(room, clientId) : null;
+    if (room.game && expirePendingTrades(room.game, Date.now()).length > 0) {
+      bump(room);
+    }
     return withClient(room, participant);
   }
 
@@ -133,6 +138,9 @@ export function createRoomStore({
 
     const payload = action.payload ?? {};
     const game = room.game;
+    if (expirePendingTrades(game, Date.now()).length > 0) {
+      bump(room);
+    }
     const current = () => getCurrentPlayer(game);
     const requireCurrentControl = () => {
       const active = current();
@@ -145,7 +153,7 @@ export function createRoomStore({
     switch (action.type) {
       case 'roll':
         requireCurrentControl();
-        rollAndMove(game, payload.dice);
+        rollAndMove(game, rollDice ? rollDice() : undefined);
         break;
       case 'buyShares':
         requireCurrentControl();
@@ -193,18 +201,31 @@ export function createRoomStore({
         break;
       case 'proposeTrade':
         assertOwnTradeSide(participant, payload, 'fromPlayerId');
-        proposeTrade(game, payload);
+        proposeTrade(game, { ...payload, now: Date.now() });
         break;
-      case 'acceptTrade':
-        assertTradeRecipient(game, participant, payload.tradeId);
-        acceptTrade(game, String(payload.tradeId ?? ''), Date.now());
+      case 'acceptTrade': {
+        const tradeId = String(payload.tradeId ?? '');
+        const trade = findTrade(game, tradeId);
+        if (trade.toPlayerId !== participant.playerId) {
+          throw new Error('只有交易接收方可以接受这笔交易。');
+        }
+        const statusBefore = trade.status;
+        try {
+          acceptTrade(game, tradeId, Date.now());
+        } catch (error) {
+          if (trade.status !== statusBefore) {
+            bump(room);
+          }
+          throw error;
+        }
         break;
+      }
       case 'rejectTrade':
         assertTradeParticipant(game, participant, payload.tradeId);
         rejectTrade(game, String(payload.tradeId ?? ''));
         break;
       case 'createContract':
-        createContractFromPayload(game, payload);
+        createContractFromPayload(game, payload, participant);
         break;
       case 'restart':
         if (!participant.isHost) {
@@ -278,24 +299,30 @@ export function createLanServer({ rootDir = __dirname, store = createRoomStore()
   });
 }
 
-function createContractFromPayload(game, payload) {
+function createContractFromPayload(game, payload, participant) {
   const type = payload.type;
   if (type === CONTRACT_TYPES.FREE_PASS) {
+    assertParticipantOwnsShareRefs(game, participant, payload.shareRefs ?? []);
     return createFreePassContract(game, {
       holderId: String(payload.holderId ?? ''),
       shareRefs: payload.shareRefs ?? [],
     });
   }
   if (type === CONTRACT_TYPES.INHERITANCE) {
+    assertParticipantOwnsShareRefs(game, participant, payload.shareRefs ?? []);
     return createInheritanceContract(game, {
       holderId: String(payload.holderId ?? ''),
       shareRefs: payload.shareRefs ?? [],
     });
   }
   if (type === CONTRACT_TYPES.VOTE_SUPPORT) {
+    const obligorId = String(payload.obligorId ?? '');
+    if (obligorId !== participant.playerId) {
+      throw new Error('局域网合同权限不足：只能绑定自己的投票义务。');
+    }
     return createVoteSupportContract(game, {
       holderId: String(payload.holderId ?? ''),
-      obligorId: String(payload.obligorId ?? ''),
+      obligorId,
       targetSpaceId: String(payload.targetSpaceId ?? ''),
       voteType: payload.voteType ?? 'build',
       stance: payload.stance,
@@ -303,6 +330,28 @@ function createContractFromPayload(game, payload) {
     });
   }
   throw new Error(`未知合同类型：${type}`);
+}
+
+function assertParticipantOwnsShareRefs(game, participant, shareRefs) {
+  const refs = [...(shareRefs ?? [])];
+  if (refs.length === 0) {
+    throw new Error('局域网合同权限不足：股份绑定合同必须绑定自己的股份。');
+  }
+  for (const shareRef of refs) {
+    const share = findShare(game, shareRef);
+    if (share.ownerId !== participant.playerId) {
+      throw new Error('局域网合同权限不足：只能绑定自己的股份。');
+    }
+  }
+}
+
+function findShare(game, shareRef) {
+  const property = game.board.find((space) => space.id === shareRef?.spaceId && space.type === 'property');
+  const share = property?.shares.find((candidate) => candidate.id === shareRef?.shareId);
+  if (!share) {
+    throw new Error(`找不到股份 ${shareRef?.shareId ?? ''}。`);
+  }
+  return share;
 }
 
 function assertOwnTradeSide(participant, draft, field) {

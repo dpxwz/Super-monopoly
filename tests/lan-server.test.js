@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 
 import { createRoomStore } from '../server.mjs';
 
-function deterministicStore() {
+function deterministicStore({ dice = [[1, 1], [1, 1], [1, 1]] } = {}) {
   const clientIds = ['client-host', 'client-guest', 'client-third', 'client-fourth', 'client-extra'];
+  let diceIndex = 0;
   return createRoomStore({
     createCode: () => 'ROOM1',
     createClientId: () => clientIds.shift(),
+    rollDice: () => dice[diceIndex++] ?? [1, 1],
   });
 }
 
@@ -102,4 +104,135 @@ test('LAN room actions are server-authoritative and bound to the controlling pla
   );
   const guestRolled = store.applyAction('ROOM1', guest.clientId, { type: 'roll', payload: { dice: [1, 1] } });
   assert.equal(guestRolled.room.game.players[1].position, 2);
+});
+
+test('LAN roll ignores forged dice payload and uses the server dice source', () => {
+  const store = deterministicStore({ dice: [[1, 1]] });
+  const host = store.createRoom({ playerName: 'Ada' }).client;
+  store.joinRoom('ROOM1', { playerName: 'Lin' });
+  store.startRoom('ROOM1', host.clientId);
+
+  const rolled = store.applyAction('ROOM1', host.clientId, {
+    type: 'roll',
+    payload: { dice: [6, 6, 6, 6, 6, 6] },
+  });
+
+  assert.equal(rolled.room.game.players[0].position, 2);
+  assert.deepEqual(rolled.room.game.lastDice, [1, 1]);
+});
+
+test('LAN contract creation requires the acting player to bind only their own assets or obligations', () => {
+  const store = deterministicStore();
+  const host = store.createRoom({ playerName: 'Ada' }).client;
+  const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
+  store.startRoom('ROOM1', host.clientId);
+  const targetSpaceId = store.rooms.get('ROOM1').game.board.find((space) => space.type === 'property').id;
+
+  assert.throws(() => store.applyAction('ROOM1', guest.clientId, {
+    type: 'createContract',
+    payload: {
+      type: 'voteSupport',
+      holderId: 'p2',
+      obligorId: 'p1',
+      targetSpaceId,
+      stance: 'no',
+    },
+  }), /权限|义务|自己|own|obligation/i);
+});
+
+test('LAN trade timestamps use server time instead of client payload time', () => {
+  const realNow = Date.now;
+  Date.now = () => 10_000;
+  try {
+    const store = deterministicStore();
+    const host = store.createRoom({ playerName: 'Ada' }).client;
+    store.joinRoom('ROOM1', { playerName: 'Lin' });
+    store.startRoom('ROOM1', host.clientId);
+
+    const snapshot = store.applyAction('ROOM1', host.clientId, {
+      type: 'proposeTrade',
+      payload: {
+        fromPlayerId: 'p1',
+        toPlayerId: 'p2',
+        offer: { cash: 0 },
+        request: { cash: 0 },
+        now: 1_000_000_000,
+      },
+    });
+
+    const trade = snapshot.room.game.pendingTrades[0];
+    assert.equal(trade.createdAt, 10_000);
+    assert.equal(trade.expiresAt, 70_000);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('LAN trade expiry bumps room revision even when the triggering action fails', () => {
+  const realNow = Date.now;
+  Date.now = () => 10_000;
+  try {
+    const store = deterministicStore();
+    const host = store.createRoom({ playerName: 'Ada' }).client;
+    const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
+    store.startRoom('ROOM1', host.clientId);
+    const proposed = store.applyAction('ROOM1', host.clientId, {
+      type: 'proposeTrade',
+      payload: {
+        fromPlayerId: 'p1',
+        toPlayerId: 'p2',
+        offer: { cash: 0 },
+        request: { cash: 0 },
+      },
+    });
+    const tradeId = proposed.room.game.pendingTrades[0].id;
+    const revisionBeforeExpiry = store.rooms.get('ROOM1').revision;
+
+    Date.now = () => 80_000;
+    assert.throws(() => store.applyAction('ROOM1', guest.clientId, {
+      type: 'acceptTrade',
+      payload: { tradeId },
+    }), /过期|待处理|pending/i);
+
+    const room = store.rooms.get('ROOM1');
+    assert.equal(room.game.pendingTrades[0].status, 'expired');
+    assert.equal(room.revision, revisionBeforeExpiry + 1);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('LAN trade expiry also bumps revision when acceptTrade itself expires the trade', () => {
+  const realNow = Date.now;
+  Date.now = () => 10_000;
+  try {
+    const store = deterministicStore();
+    const host = store.createRoom({ playerName: 'Ada' }).client;
+    const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
+    store.startRoom('ROOM1', host.clientId);
+    const proposed = store.applyAction('ROOM1', host.clientId, {
+      type: 'proposeTrade',
+      payload: {
+        fromPlayerId: 'p1',
+        toPlayerId: 'p2',
+        offer: { cash: 0 },
+        request: { cash: 0 },
+      },
+    });
+    const tradeId = proposed.room.game.pendingTrades[0].id;
+    const revisionBeforeExpiry = store.rooms.get('ROOM1').revision;
+    const times = [69_999, 70_000];
+    Date.now = () => times.shift() ?? 70_000;
+
+    assert.throws(() => store.applyAction('ROOM1', guest.clientId, {
+      type: 'acceptTrade',
+      payload: { tradeId },
+    }), /过期|expired/i);
+
+    const room = store.rooms.get('ROOM1');
+    assert.equal(room.game.pendingTrades[0].status, 'expired');
+    assert.equal(room.revision, revisionBeforeExpiry + 1);
+  } finally {
+    Date.now = realNow;
+  }
 });

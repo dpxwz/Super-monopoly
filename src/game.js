@@ -304,7 +304,9 @@ export function rollAndMove(game, dice = rollDice()) {
 }
 
 export function buyCurrentShares(game, shareCount) {
-  assertPlaying(game);
+  assertPhase(game, ['action']);
+  assertNoPendingVote(game);
+  assertNoPendingConstruction(game);
   const offer = game.pendingOffer;
   if (!offer || offer.type !== 'bankShares') {
     throw new Error(t('error.noPurchasableShares'));
@@ -346,6 +348,9 @@ export function declineCurrentShareOffer(game) {
   if (!game.pendingOffer) {
     return null;
   }
+  assertPhase(game, ['action']);
+  assertNoPendingVote(game);
+  assertNoPendingConstruction(game);
   const player = getPlayer(game, game.pendingOffer.playerId);
   const property = findSpace(game, game.pendingOffer.spaceId);
   game.pendingOffer = null;
@@ -359,7 +364,10 @@ export function declineCurrentProperty(game) {
 }
 
 export function buildHouse(game, propertyId) {
-  assertPlaying(game);
+  assertPhase(game, ['roll', 'action', 'end']);
+  assertNoPendingOffer(game);
+  assertNoPendingVote(game);
+  assertNoPendingConstruction(game);
   const player = getCurrentPlayer(game);
   const property = assertProperty(game, propertyId);
   const eligibility = getBuildEligibility(game, property.id, player.id);
@@ -374,7 +382,10 @@ export function buildHouse(game, propertyId) {
 }
 
 export function demolishHouse(game, propertyId) {
-  assertPlaying(game);
+  assertPhase(game, ['roll', 'action', 'end', 'cashRecovery']);
+  assertNoPendingOffer(game);
+  assertNoPendingVote(game);
+  assertNoPendingConstruction(game);
   const player = getCurrentPlayer(game);
   const property = assertProperty(game, propertyId);
   const eligibility = getDemolishEligibility(game, property.id, player.id);
@@ -389,8 +400,13 @@ export function endTurn(game) {
   if (game.status === 'gameOver') {
     return game;
   }
-  if (game.phase === 'auctionPending' || game.phase === 'buildPayment') {
+  if (game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote') {
     throw new Error(t('error.cannotEndTurnPaused'));
+  }
+  assertNoPendingVote(game);
+  assertNoPendingConstruction(game);
+  if (game.pendingOffer) {
+    throw new Error(t('error.offerMustResolveFirst'));
   }
 
   const currentPlayer = getCurrentPlayer(game);
@@ -614,6 +630,7 @@ export function calculateRentPayments(game, propertyId, visitorId) {
 }
 
 export function transferShares(game, fromPlayerId, toPlayerId, shareRefs) {
+  assertPlaying(game);
   if (toPlayerId === BANK_ID) {
     throw new Error(t('error.soldSharesCannotReturn'));
   }
@@ -653,6 +670,7 @@ export function transferShares(game, fromPlayerId, toPlayerId, shareRefs) {
 }
 
 export function proposeTrade(game, draft) {
+  assertTradeAllowed(game, draft.fromPlayerId, draft.toPlayerId);
   const from = getPlayer(game, draft.fromPlayerId);
   const to = getPlayer(game, draft.toPlayerId);
   if (from.id === to.id) {
@@ -685,6 +703,7 @@ export function acceptTrade(game, tradeId, now = Date.now()) {
     throw new Error(t('error.tradeExpired'));
   }
 
+  assertTradeAllowed(game, trade.fromPlayerId, trade.toPlayerId);
   validateTradeLeg(game, trade.fromPlayerId, trade.offer);
   validateTradeLeg(game, trade.toPlayerId, trade.request);
 
@@ -730,11 +749,13 @@ export function expirePendingTrades(game, now = Date.now()) {
 }
 
 export function createFreePassContract(game, { holderId, shareRefs }) {
+  assertContractCreationAllowed(game);
   getPlayer(game, holderId);
   return createShareBoundContract(game, CONTRACT_TYPES.FREE_PASS, holderId, shareRefs);
 }
 
 export function createInheritanceContract(game, { holderId, shareRefs }) {
+  assertContractCreationAllowed(game);
   getPlayer(game, holderId);
   return createShareBoundContract(game, CONTRACT_TYPES.INHERITANCE, holderId, shareRefs);
 }
@@ -747,11 +768,15 @@ export function createVoteSupportContract(game, {
   stance,
   remainingUses = 1,
 }) {
+  assertContractCreationAllowed(game);
   getPlayer(game, holderId);
   getPlayer(game, obligorId);
   assertProperty(game, targetSpaceId);
   if (!['yes', 'no'].includes(stance)) {
     throw new Error(t('error.voteSupportStance'));
+  }
+  if (!Number.isInteger(remainingUses) || remainingUses < 1) {
+    throw new Error(t('error.remainingUsesRange'));
   }
   const conflicting = game.contracts.find((contract) => (
     contract.status === 'active'
@@ -781,6 +806,7 @@ export function createVoteSupportContract(game, {
 }
 
 export function transferContract(game, contractId, toPlayerId) {
+  assertPlaying(game);
   const contract = getContract(game, contractId);
   getPlayer(game, toPlayerId);
   if (contract.status !== 'active') {
@@ -791,6 +817,7 @@ export function transferContract(game, contractId, toPlayerId) {
 }
 
 export function buyBackContract(game, contractId, buyerId) {
+  assertPlaying(game);
   const contract = getContract(game, contractId);
   if (![CONTRACT_TYPES.FREE_PASS, CONTRACT_TYPES.INHERITANCE].includes(contract.type)) {
     throw new Error(t('error.onlyFreePassOrInheritance'));
@@ -812,7 +839,10 @@ export function buyBackContract(game, contractId, buyerId) {
 }
 
 export function startBuildVote(game, propertyId) {
-  assertPlaying(game);
+  assertPhase(game, ['roll', 'action', 'end']);
+  assertNoPendingOffer(game);
+  assertNoPendingVote(game);
+  assertNoPendingConstruction(game);
   const player = getCurrentPlayer(game);
   const property = assertProperty(game, propertyId);
   const eligibility = getBuildEligibility(game, property.id, player.id);
@@ -834,7 +864,10 @@ export function startBuildVote(game, propertyId) {
 }
 
 export function startDemolishVote(game, propertyId) {
-  assertPlaying(game);
+  assertPhase(game, ['roll', 'action', 'end', 'cashRecovery']);
+  assertNoPendingOffer(game);
+  assertNoPendingVote(game);
+  assertNoPendingConstruction(game);
   const player = getCurrentPlayer(game);
   const property = assertProperty(game, propertyId);
   const eligibility = getDemolishEligibility(game, property.id, player.id);
@@ -856,9 +889,14 @@ export function startDemolishVote(game, propertyId) {
 }
 
 export function castBuildVote(game, voteId, playerId, stance) {
+  assertPhase(game, ['vote']);
   const vote = getVote(game, voteId);
   if (vote.status !== 'open') {
     throw new Error(t('error.voteEnded'));
+  }
+  const voter = getPlayer(game, playerId);
+  if (voter.bankrupt) {
+    throw new Error(t('error.bankruptCannotAct'));
   }
   if (!['yes', 'no'].includes(stance)) {
     throw new Error(t('error.voteMustBeYesNo'));
@@ -875,6 +913,7 @@ export function castBuildVote(game, voteId, playerId, stance) {
 }
 
 export function resolveBuildVote(game, voteId) {
+  assertPhase(game, ['vote']);
   const vote = getVote(game, voteId);
   if (vote.status !== 'open') {
     return { passed: vote.status === 'passed' };
@@ -891,7 +930,15 @@ export function resolveBuildVote(game, voteId) {
       noShareCount += count;
     }
   }
-  const passed = yesShareCount >= DIRECT_BUILD_SHARES;
+  let passed = yesShareCount >= DIRECT_BUILD_SHARES;
+  let invalidationReason = null;
+  if (passed) {
+    const validation = validateVoteResolution(game, vote, property);
+    if (!validation.ok) {
+      passed = false;
+      invalidationReason = validation.reason;
+    }
+  }
   vote.status = passed ? 'passed' : 'failed';
   consumeVoteSupportContracts(game, vote);
   if (passed) {
@@ -904,10 +951,16 @@ export function resolveBuildVote(game, voteId) {
     game.phase = 'end';
   }
   game.pendingVote = null;
-  return { passed, yesShareCount, noShareCount };
+  return {
+    passed,
+    yesShareCount,
+    noShareCount,
+    ...(invalidationReason ? { reason: 'invalidated', invalidationReason } : {}),
+  };
 }
 
 export function resolvePendingConstruction(game) {
+  assertPlaying(game);
   if (!game.pendingConstruction) {
     throw new Error(t('error.noPendingConstruction'));
   }
@@ -915,6 +968,13 @@ export function resolvePendingConstruction(game) {
 }
 
 export function declareBankruptcy(game, playerId, { type = 'passive', reason = '破产' } = {}) {
+  assertPlaying(game);
+  if (game.phase === 'auctionPending') {
+    throw new Error(t('error.auctionPendingBlocksAction'));
+  }
+  if (game.phase === 'vote') {
+    throw new Error(t('error.voteMustResolveFirst'));
+  }
   const player = getPlayer(game, playerId);
   if (player.bankrupt) {
     return player;
@@ -922,6 +982,7 @@ export function declareBankruptcy(game, playerId, { type = 'passive', reason = '
 
   player.bankrupt = true;
   player.cash = 0;
+  cancelPendingTradesForPlayer(game, player.id);
   applyInheritanceOnBankruptcy(game, player.id);
 
   const assets = [];
@@ -1033,6 +1094,7 @@ function adjustCash(game, player, amount) {
 }
 
 function applyBuildCostsOrPause(game, property, source) {
+  assertNoPendingConstruction(game);
   const allocations = makeBuildCostAllocations(game, property);
   const insufficientPlayerIds = insufficientPlayersForAllocations(game, allocations);
 
@@ -1153,6 +1215,9 @@ function applyInheritanceOnBankruptcy(game, bankruptPlayerId) {
 
 function createShareBoundContract(game, type, holderId, shareRefs) {
   const refs = normalizeShareRefs(shareRefs);
+  if (refs.length === 0) {
+    throw new Error(t('error.contractNeedsShares'));
+  }
   for (const ref of refs) {
     const share = getShare(game, ref);
     const duplicateContract = share.encumbranceContractIds
@@ -1250,9 +1315,9 @@ function consumeVoteSupportContracts(game, vote) {
 
 function normalizeTradeAssets(assets = {}) {
   return {
-    cash: Number(assets.cash ?? 0),
+    cash: normalizeCashAmount(assets.cash ?? 0),
     shareRefs: normalizeShareRefs(assets.shareRefs ?? []),
-    contractIds: [...(assets.contractIds ?? [])],
+    contractIds: uniqueStrings(assets.contractIds ?? []),
   };
 }
 
@@ -1347,6 +1412,33 @@ function refreshCashRecoveryPhase(game) {
   }
 }
 
+function validateVoteResolution(game, vote, property) {
+  const initiator = game.players.find((candidate) => candidate.id === vote.initiatorId);
+  if (!initiator || initiator.bankrupt) {
+    return { ok: false, reason: 'initiatorUnavailable' };
+  }
+  if (vote.type === 'demolish') {
+    const eligibility = getDemolishEligibility(game, property.id, vote.initiatorId);
+    return {
+      ok: eligibility.canStartVote || eligibility.canDirectDemolish,
+      reason: eligibility.reason,
+    };
+  }
+  const eligibility = getBuildEligibility(game, property.id, vote.initiatorId);
+  return {
+    ok: eligibility.canStartVote || eligibility.canDirectBuild,
+    reason: eligibility.reason,
+  };
+}
+
+function cancelPendingTradesForPlayer(game, playerId) {
+  for (const trade of game.pendingTrades) {
+    if (trade.status === 'pending' && [trade.fromPlayerId, trade.toPlayerId].includes(playerId)) {
+      trade.status = 'cancelled';
+    }
+  }
+}
+
 function currentSpace(game, player) {
   return game.board[player.position];
 }
@@ -1405,10 +1497,15 @@ function getVote(game, voteId) {
 }
 
 function normalizeShareRefs(shareRefs) {
-  return [...(shareRefs ?? [])].map((shareRef) => ({
-    spaceId: shareRef.spaceId,
-    shareId: shareRef.shareId,
-  }));
+  const unique = new Map();
+  for (const shareRef of shareRefs ?? []) {
+    const normalized = {
+      spaceId: shareRef.spaceId,
+      shareId: shareRef.shareId,
+    };
+    unique.set(`${normalized.spaceId}:${normalized.shareId}`, normalized);
+  }
+  return [...unique.values()];
 }
 
 function isPurchasable(space) {
@@ -1450,7 +1547,7 @@ function normalizePlayerNames(playerNames) {
 }
 
 function normalizeDice(dice) {
-  if (!Array.isArray(dice) || dice.length === 0) {
+  if (!Array.isArray(dice) || dice.length !== 2) {
     throw new Error(t('error.diceMustBeArray'));
   }
   for (const value of dice) {
@@ -1459,6 +1556,66 @@ function normalizeDice(dice) {
     }
   }
   return dice;
+}
+
+function assertPhase(game, allowedPhases) {
+  assertPlaying(game);
+  if (!allowedPhases.includes(game.phase)) {
+    throw new Error(t('error.actionNotAllowedInPhase', game.phase));
+  }
+}
+
+function assertNoPendingVote(game) {
+  if (game.pendingVote) {
+    throw new Error(t('error.voteMustResolveFirst'));
+  }
+}
+
+function assertNoPendingConstruction(game) {
+  if (game.pendingConstruction) {
+    throw new Error(t('error.constructionMustResolveFirst'));
+  }
+}
+
+function assertNoPendingOffer(game) {
+  if (game.pendingOffer) {
+    throw new Error(t('error.offerMustResolveFirst'));
+  }
+}
+
+function assertContractCreationAllowed(game) {
+  assertPlaying(game);
+  if (game.phase === 'auctionPending') {
+    throw new Error(t('error.auctionPendingBlocksAction'));
+  }
+  if (game.phase === 'vote' || game.pendingVote) {
+    throw new Error(t('error.voteMustResolveFirst'));
+  }
+}
+
+function assertTradeAllowed(game, fromPlayerId, toPlayerId) {
+  assertPlaying(game);
+  if (game.phase === 'auctionPending') {
+    throw new Error(t('error.auctionPendingBlocksAction'));
+  }
+  for (const playerId of [fromPlayerId, toPlayerId]) {
+    const player = getPlayer(game, playerId);
+    if (player.bankrupt) {
+      throw new Error(t('error.bankruptCannotTrade', player.name));
+    }
+  }
+}
+
+function normalizeCashAmount(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(t('error.invalidCashAmount'));
+  }
+  return amount;
+}
+
+function uniqueStrings(values) {
+  return [...new Set([...(values ?? [])].map((value) => String(value)).filter(Boolean))];
 }
 
 function assertPlaying(game) {

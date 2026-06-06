@@ -46,6 +46,7 @@ import {
   proposeTrade,
   rejectTrade,
   resolveBuildVote,
+  resolvePendingConstruction,
   rollAndMove,
   startBuildVote,
   startDemolishVote,
@@ -792,4 +793,225 @@ test('active bankruptcy remains the explicit way to end a cash-locked two-player
   assert.equal(game.players[1].bankrupt, true);
   assert.equal(game.status, 'gameOver');
   assert.equal(game.winnerId, 'p1');
+});
+
+test('vote phase locks the turn until the pending vote is resolved', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const group = getColorGroupProperties(game, firstProperty(game).colorGroup);
+  const target = group[0];
+
+  grantShares(game, target, 'p1', 0, 4);
+  grantShares(game, target, 'p2', 4, 3);
+  grantShares(game, target, 'p3', 7, 3);
+  for (const property of group.slice(1)) {
+    grantShares(game, property, 'p1', 0, MAJOR_SHAREHOLDER_SHARES);
+  }
+
+  const vote = startBuildVote(game, target.id);
+
+  assert.throws(() => endTurn(game), /投票|阶段|暂停|phase/i);
+  assert.equal(game.turn, 0);
+  assert.equal(game.phase, 'vote');
+  assert.equal(game.pendingVote.id, vote.id);
+  assert.equal(game.pendingVote.status, 'open');
+});
+
+test('build payment blocks new construction until the pending cost is resolved', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const group = getColorGroupProperties(game, firstProperty(game).colorGroup);
+  const [target, second, third] = group;
+
+  grantShares(game, target, 'p1', 0, 5);
+  grantShares(game, target, 'p2', 5, 5);
+  grantWholeProperty(game, second, 'p1');
+  grantShares(game, third, 'p1', 0, MAJOR_SHAREHOLDER_SHARES);
+  game.players[1].cash = target.houseCost * 0.5 - 1;
+
+  buildHouse(game, target.id);
+
+  assert.equal(game.phase, 'buildPayment');
+  assert.equal(game.pendingConstruction.propertyId, target.id);
+  assert.throws(() => buildHouse(game, second.id), /待支付|暂停|阶段|phase/i);
+  assert.equal(game.pendingConstruction.propertyId, target.id);
+  assert.equal(second.houses, 0);
+});
+
+test('stale build votes are invalidated if the target reaches max level before resolution', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const group = getColorGroupProperties(game, firstProperty(game).colorGroup);
+  const target = group[0];
+
+  grantShares(game, target, 'p1', 0, 4);
+  grantShares(game, target, 'p2', 4, 3);
+  grantShares(game, target, 'p3', 7, 3);
+  for (const property of group.slice(1)) {
+    grantShares(game, property, 'p1', 0, MAJOR_SHAREHOLDER_SHARES);
+  }
+  const vote = startBuildVote(game, target.id);
+  castBuildVote(game, vote.id, 'p1', 'yes');
+  castBuildVote(game, vote.id, 'p2', 'yes');
+
+  target.houses = target.rent.length - 1;
+  target.currentRent = target.rent[target.houses];
+  const result = resolveBuildVote(game, vote.id);
+
+  assert.equal(result.passed, false);
+  assert.equal(result.reason, 'invalidated');
+  assert.equal(vote.status, 'failed');
+  assert.equal(target.houses, target.rent.length - 1);
+  assert.equal(target.currentRent, target.rent.at(-1));
+  assert.equal(game.pendingVote, null);
+  assert.equal(game.phase, 'end');
+});
+
+test('bankruptcy cancels related pending trades and freezes auction assets', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 1);
+
+  const trade = proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: { shareRefs: shares(property, 0, 1) },
+    request: { cash: 0 },
+    now: 1_000,
+  });
+  declareBankruptcy(game, 'p1', { type: 'active', reason: '测试破产冻结' });
+
+  assert.equal(trade.status, 'cancelled');
+  assert.throws(() => acceptTrade(game, trade.id, 1_001), /待处理|取消|破产|拍卖|pending/i);
+  assert.throws(() => proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: { shareRefs: shares(property, 0, 1) },
+    request: { cash: 0 },
+    now: 1_002,
+  }), /破产|拍卖|暂停|auction/i);
+  assert.equal(property.shares[0].ownerId, 'p1');
+  assert.ok(game.pendingAuction.assets.some((asset) => asset.shareId === property.shares[0].id));
+});
+
+test('trade cash must be a finite non-negative number', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 1);
+
+  assert.throws(() => proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: { shareRefs: shares(property, 0, 1) },
+    request: { cash: -100 },
+  }), /现金|金额|cash|finite/i);
+  assert.throws(() => proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: { cash: Number.NaN },
+    request: { cash: 0 },
+  }), /现金|金额|cash|finite/i);
+});
+
+test('rollAndMove accepts exactly two six-sided dice', () => {
+  const game = createGame(['Ada', 'Lin']);
+
+  assert.throws(() => rollAndMove(game, [1]), /骰子|dice/i);
+  assert.throws(() => rollAndMove(game, [1, 1, 1]), /骰子|dice/i);
+  assert.throws(() => rollAndMove(game, [0, 7]), /骰子|dice/i);
+});
+
+test('gameOver is terminal for bankruptcy mutations', () => {
+  const game = createGame(['Ada', 'Lin']);
+
+  declareBankruptcy(game, 'p2', { type: 'active', reason: '主动破产' });
+
+  assert.equal(game.status, 'gameOver');
+  assert.equal(game.phase, 'gameOver');
+  assert.equal(game.winnerId, 'p1');
+  assert.throws(() => declareBankruptcy(game, 'p1', { type: 'active', reason: '终局后破产' }), /结束|game/i);
+  assert.equal(game.players[0].bankrupt, false);
+  assert.equal(game.phase, 'gameOver');
+});
+
+test('gameOver is terminal for direct share transfers', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 1);
+
+  declareBankruptcy(game, 'p2', { type: 'active', reason: '主动破产' });
+
+  assert.equal(game.status, 'gameOver');
+  assert.throws(() => transferShares(game, 'p1', 'p2', shares(property, 0, 1)), /结束|game/i);
+  assert.equal(property.shares[0].ownerId, 'p1');
+});
+
+test('pending share offers must be resolved before construction or votes can change phase', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const group = getColorGroupProperties(game, firstProperty(game).colorGroup);
+  const target = group[0];
+
+  grantShares(game, target, 'p1', 0, 4);
+  grantShares(game, target, 'p2', 4, 3);
+  grantShares(game, target, 'p3', 7, 3);
+  for (const property of group.slice(1)) {
+    grantShares(game, property, 'p1', 0, MAJOR_SHAREHOLDER_SHARES);
+  }
+  rollAndMove(game, [2, 2]);
+
+  assert.equal(game.phase, 'action');
+  assert.equal(game.pendingOffer.type, 'bankShares');
+  assert.throws(() => startBuildVote(game, target.id), /购买机会|offer|阶段|phase/i);
+  assert.equal(game.phase, 'action');
+  assert.equal(game.pendingVote, null);
+});
+
+test('share offers cannot be bought or declined outside the purchase action phase', () => {
+  const game = createGame(['Ada', 'Lin']);
+
+  rollAndMove(game, [1, 1]);
+  game.phase = 'vote';
+
+  assert.throws(() => buyCurrentShares(game, 1), /阶段|phase/i);
+  assert.throws(() => declineCurrentShareOffer(game), /阶段|phase/i);
+  assert.equal(game.pendingOffer.type, 'bankShares');
+});
+
+test('resolvePendingConstruction cannot mutate a finished game', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const group = getColorGroupProperties(game, firstProperty(game).colorGroup);
+  const target = group[0];
+
+  grantShares(game, target, 'p1', 0, 5);
+  grantShares(game, target, 'p2', 5, 5);
+  for (const property of group.slice(1)) {
+    grantShares(game, property, 'p1', 0, MAJOR_SHAREHOLDER_SHARES);
+  }
+  game.players[1].cash = target.houseCost * 0.5 - 1;
+  buildHouse(game, target.id);
+  declareBankruptcy(game, 'p2', { type: 'active', reason: '费用不足' });
+
+  assert.equal(game.status, 'gameOver');
+  assert.equal(game.phase, 'gameOver');
+  assert.throws(() => resolvePendingConstruction(game), /结束|game/i);
+  assert.equal(game.phase, 'gameOver');
+  assert.equal(game.pendingConstruction.propertyId, target.id);
+});
+
+test('vote support contracts cannot be created after a matching vote has already started', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const group = getColorGroupProperties(game, firstProperty(game).colorGroup);
+  const target = group[0];
+
+  grantShares(game, target, 'p1', 0, 4);
+  grantShares(game, target, 'p2', 4, 3);
+  grantShares(game, target, 'p3', 7, 3);
+  for (const property of group.slice(1)) {
+    grantShares(game, property, 'p1', 0, MAJOR_SHAREHOLDER_SHARES);
+  }
+  startBuildVote(game, target.id);
+
+  assert.throws(() => createVoteSupportContract(game, {
+    holderId: 'p1',
+    obligorId: 'p2',
+    targetSpaceId: target.id,
+    stance: 'yes',
+  }), /投票|阶段|phase/i);
 });

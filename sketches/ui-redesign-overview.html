@@ -1,0 +1,67 @@
+<!doctype html>
+
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Super Monopoly UI Redesign Sketches</title>
+  <style>
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:#f7f8f8; background:#07080a; }
+    main { width:min(1500px, calc(100vw - 32px)); margin:0 auto; padding:28px 0 40px; }
+    header { display:flex; justify-content:space-between; align-items:end; gap:18px; margin-bottom:22px; }
+    h1 { margin:0; font-size:clamp(28px, 4vw, 48px); letter-spacing:-.06em; font-weight:510; }
+    p { color:#8a8f98; line-height:1.55; }
+    .grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:18px; }
+    article { overflow:hidden; border:1px solid rgba(255,255,255,.09); border-radius:24px; background:rgba(255,255,255,.035); box-shadow:0 24px 70px rgba(0,0,0,.32); }
+    iframe { display:block; width:100%; height:460px; border:0; background:#05060a; transform-origin:0 0; }
+    .card-body { padding:18px; }
+    h2 { margin:0 0 8px; font-size:18px; }
+    a { display:inline-flex; margin-top:8px; padding:10px 13px; border-radius:999px; color:#fff; background:#5e6ad2; text-decoration:none; font-weight:700; font-size:13px; }
+    .note { max-width:760px; }
+    code { color:#dfe2ff; }
+    @media (max-width:1100px) { .grid { grid-template-columns:1fr; } iframe { height:620px; } header { align-items:start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Super Monopoly UI Redesign Sketches</h1>
+        <p class="note">三个一次性 HTML 预览。每个都包含：地图中心事件 log、左上存活玩家与现金、左下聊天室、本地/联机右栏逻辑、交易 overlay、双击玩家查看资产 overlay。</p>
+      </div>
+      <p><code>/home/alan/Desktop/super-monopoly/sketches</code></p>
+    </header>
+    <section class="grid">
+
+      <article>
+        <iframe src="./001-linear-command-deck/index.html" title="Linear Command Deck"></iframe>
+        <div class="card-body">
+          <h2>Linear Command Deck</h2>
+          <p>最接近 Linear 的简约深色仪表盘。强调清晰三栏：左资产/聊天，中地图，右操作。</p>
+          <a href="./001-linear-command-deck/index.html">打开完整预览</a>
+        </div>
+      </article>
+
+      <article>
+        <iframe src="./002-cinematic-map-theater/index.html" title="Cinematic Map Theater"></iframe>
+        <div class="card-body">
+          <h2>Cinematic Map Theater</h2>
+          <p>地图优先的沉浸式桌游视角。左/右信息像 HUD 浮层，中心事件 log 更像战报。</p>
+          <a href="./002-cinematic-map-theater/index.html">打开完整预览</a>
+        </div>
+      </article>
+
+      <article>
+        <iframe src="./003-tactical-console/index.html" title="Tactical Console"></iframe>
+        <div class="card-body">
+          <h2>Tactical Console</h2>
+          <p>更高信息密度的控制台风格。适合规则复杂、交易/合同频繁的局面。</p>
+          <a href="./003-tactical-console/index.html">打开完整预览</a>
+        </div>
+      </article>
+
+    </section>
+  </main>
+</body>
+</html>

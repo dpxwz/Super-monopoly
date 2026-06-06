@@ -967,7 +967,7 @@ function renderControls() {
   elements.buyButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused || cashLocked || networkLocked || networkOfferLocked;
   elements.declineButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused || networkLocked || networkOfferLocked;
   elements.endButton.disabled = game.phase === 'roll' || hasOffer || game.status === 'gameOver' || processPaused || game.phase === 'vote' || cashLocked || networkLocked;
-  elements.bankruptcyButton.disabled = game.status === 'gameOver' || game.phase === 'auctionPending' || currentPlayer.bankrupt || networkLocked;
+  elements.bankruptcyButton.disabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'vote' || currentPlayer.bankrupt || networkLocked;
   elements.newGameButton.disabled = isLanMode() && (!networkSession.isHost || !isLanStarted());
 }
 
@@ -1049,8 +1049,8 @@ function renderProperties() {
     const rent = getSpaceRent(property);
     const turnLocked = focusPlayer.id !== currentPlayer.id;
     const networkLocked = isLanMode() && currentPlayer.id !== networkSession.playerId;
-    const buildDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || game.phase === 'cashRecovery' || turnLocked || networkLocked;
-    const demolishDisabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || turnLocked || networkLocked;
+    const buildDisabled = game.status === 'gameOver' || Boolean(game.pendingOffer) || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || game.phase === 'cashRecovery' || turnLocked || networkLocked;
+    const demolishDisabled = game.status === 'gameOver' || Boolean(game.pendingOffer) || game.phase === 'auctionPending' || game.phase === 'buildPayment' || game.phase === 'vote' || turnLocked || networkLocked;
     const shareholders = shareholderText(property);
 
     return `
