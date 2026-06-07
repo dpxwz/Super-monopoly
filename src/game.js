@@ -540,6 +540,24 @@ export function getPlayerShareCount(game, propertyId, playerId) {
   return assertProperty(game, propertyId).shares.filter((share) => share.ownerId === playerId).length;
 }
 
+export function getTradeableShareCount(game, propertyId, playerId) {
+  return getTradeableShares(game, propertyId, playerId).length;
+}
+
+export function getTradeableShareRefs(game, playerId, propertyId, count) {
+  if (!propertyId || count <= 0) return [];
+  const property = assertProperty(game, propertyId);
+  return getTradeableShares(game, propertyId, playerId)
+    .slice(0, count)
+    .map((share) => ({ spaceId: property.id, shareId: share.id }));
+}
+
+function getTradeableShares(game, propertyId, playerId) {
+  return assertProperty(game, propertyId).shares.filter((share) => (
+    share.ownerId === playerId && !isShareInheritanceBound(game, share)
+  ));
+}
+
 export function getBankShareCount(game, propertyId) {
   return getPlayerShareCount(game, propertyId, BANK_ID);
 }

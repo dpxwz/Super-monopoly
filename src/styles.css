@@ -1023,6 +1023,44 @@ body.is-local-mode .chat-panel::after {
   z-index: 50;
 }
 
+.trade-shares-block {
+  display: grid;
+  gap: 8px;
+}
+
+.trade-shares-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.trade-shares-list {
+  display: grid;
+  gap: 8px;
+}
+
+.trade-share-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.trade-share-line select,
+.trade-share-line .range-input-group {
+  min-width: 0;
+}
+
+.trade-share-remove {
+  min-height: 42px;
+  min-width: 42px;
+  padding: 0;
+}
+
 .trade-contract-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: end;
@@ -1140,7 +1178,8 @@ body.is-local-mode .chat-panel::after {
   .mode-selector,
   .form-row.two-col,
   .share-purchase-form,
-  .player-detail-grid {
+  .player-detail-grid,
+  .trade-share-line {
     grid-template-columns: 1fr;
   }
 

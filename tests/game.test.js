@@ -39,6 +39,8 @@ import {
   getPlayerPropertyHoldings,
   getPlayerShareCount,
   getPropertyShareholders,
+  getTradeableShareCount,
+  getTradeableShareRefs,
   getSpaceRent,
   isColorGroupMajorShareholder,
   isFullyPlayerOwned,
@@ -405,6 +407,46 @@ test('trades can be proposed in any phase, rejected, expired, and only accepted 
 
   transferContract(game, freePass.id, 'p3');
   assert.equal(freePass.holderId, 'p3');
+});
+
+test('trades can include shares from multiple properties in one offer', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const first = firstProperty(game);
+  const second = getColorGroupProperties(game, first.colorGroup).find((property) => property.id !== first.id);
+  grantShares(game, first, 'p1', 0, 2);
+  grantShares(game, second, 'p1', 0, 3);
+
+  const trade = proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: {
+      shareRefs: [
+        ...getTradeableShareRefs(game, 'p1', first.id, 2),
+        ...getTradeableShareRefs(game, 'p1', second.id, 1),
+      ],
+    },
+    request: { cash: 40 },
+    now: 1_000,
+  });
+  acceptTrade(game, trade.id, 1_001);
+
+  assert.equal(getPlayerShareCount(game, first.id, 'p2'), 2);
+  assert.equal(getPlayerShareCount(game, second.id, 'p2'), 1);
+  assert.equal(getPlayerShareCount(game, first.id, 'p1'), 0);
+  assert.equal(getPlayerShareCount(game, second.id, 'p1'), 2);
+});
+
+test('inheritance-bound shares are excluded from tradeable share helpers', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 3);
+  withTradeContractContext(game, () => createInheritanceContract(game, {
+    holderId: 'p2',
+    shareRefs: shares(property, 0, 1),
+  }));
+
+  assert.equal(getTradeableShareCount(game, property.id, 'p1'), 2);
+  assert.equal(getTradeableShareRefs(game, 'p1', property.id, 3).length, 2);
 });
 
 test('expired pending trades cannot be accepted even if assets are still available', () => {

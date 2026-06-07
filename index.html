@@ -248,26 +248,21 @@
               </span>
             </label>
           </div>
-          <div class="form-row two-col">
-            <label>给出股份<select id="trade-offer-property"></select></label>
-            <label class="range-input-label">
-              股数
-              <span class="range-input-group">
-                <input id="trade-offer-shares" type="number" min="0" step="1" value="0" />
-                <input id="trade-offer-shares-range" type="range" min="0" max="0" step="1" value="0" aria-label="给出股数滑条" />
-              </span>
-            </label>
+          <div class="trade-shares-block">
+            <div class="trade-shares-heading">
+              <span data-i18n="ui.offerShares">给出股份</span>
+              <button class="mini-button" type="button" id="trade-offer-add-share" data-i18n="ui.addTradeShare">添加地块</button>
+            </div>
+            <div id="trade-offer-shares-list" class="trade-shares-list"></div>
           </div>
-          <div class="form-row two-col">
-            <label>索要股份<select id="trade-request-property"></select></label>
-            <label class="range-input-label">
-              股数
-              <span class="range-input-group">
-                <input id="trade-request-shares" type="number" min="0" step="1" value="0" />
-                <input id="trade-request-shares-range" type="range" min="0" max="0" step="1" value="0" aria-label="索要股数滑条" />
-              </span>
-            </label>
+          <div class="trade-shares-block">
+            <div class="trade-shares-heading">
+              <span data-i18n="ui.requestShares">索要股份</span>
+              <button class="mini-button" type="button" id="trade-request-add-share" data-i18n="ui.addTradeShare">添加地块</button>
+            </div>
+            <div id="trade-request-shares-list" class="trade-shares-list"></div>
           </div>
+          <p class="muted compact-hint" data-i18n="ui.tradeSharesHint">可添加多个地块；每行股数为 0 表示不附带该地块股份</p>
           <div class="form-row trade-contract-row">
             <label data-i18n-label="ui.offerContract">
               给出合同

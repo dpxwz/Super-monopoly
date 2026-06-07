@@ -26,6 +26,8 @@ import {
   getPlayerPropertyHoldings,
   getPlayerShareCount,
   getPropertyShareholders,
+  getTradeableShareCount,
+  getTradeableShareRefs,
   getSpaceRent,
   isColorGroupMajorShareholder,
   ownsCompleteColorGroup,
@@ -99,12 +101,10 @@ const elements = {
   tradeOfferCashRange: document.querySelector('#trade-offer-cash-range'),
   tradeRequestCash: document.querySelector('#trade-request-cash'),
   tradeRequestCashRange: document.querySelector('#trade-request-cash-range'),
-  tradeOfferProperty: document.querySelector('#trade-offer-property'),
-  tradeOfferShares: document.querySelector('#trade-offer-shares'),
-  tradeOfferSharesRange: document.querySelector('#trade-offer-shares-range'),
-  tradeRequestProperty: document.querySelector('#trade-request-property'),
-  tradeRequestShares: document.querySelector('#trade-request-shares'),
-  tradeRequestSharesRange: document.querySelector('#trade-request-shares-range'),
+  tradeOfferSharesList: document.querySelector('#trade-offer-shares-list'),
+  tradeOfferAddShare: document.querySelector('#trade-offer-add-share'),
+  tradeRequestSharesList: document.querySelector('#trade-request-shares-list'),
+  tradeRequestAddShare: document.querySelector('#trade-request-add-share'),
   tradeOfferContract: document.querySelector('#trade-offer-contract'),
   tradeRequestContract: document.querySelector('#trade-request-contract'),
   tradeNote: document.querySelector('#trade-note'),
@@ -170,8 +170,10 @@ elements.board.style.setProperty('--board-side-length', BOARD_SIDE_LENGTH);
 let sharePurchaseBinding;
 let tradeOfferCashBinding;
 let tradeRequestCashBinding;
-let tradeOfferSharesBinding;
-let tradeRequestSharesBinding;
+const tradeShareLineBindings = {
+  offer: [],
+  request: [],
+};
 
 // ── Static HTML translation ──
 // Translates elements with data-i18n, data-i18n-label, data-i18n-placeholder attributes.
@@ -438,8 +440,8 @@ function bindEvents() {
     safeAction(async () => {
       const fromPlayerId = isLanMode() ? networkSession.playerId : elements.tradeFrom.value;
       const toPlayerId = elements.tradeTo.value;
-      const offer = buildTradeAssets(fromPlayerId, elements.tradeOfferProperty, elements.tradeOfferShares, elements.tradeOfferCash, elements.tradeOfferContract);
-      const request = buildTradeAssets(toPlayerId, elements.tradeRequestProperty, elements.tradeRequestShares, elements.tradeRequestCash, elements.tradeRequestContract);
+      const offer = buildTradeAssets(fromPlayerId, 'offer', elements.tradeOfferCash, elements.tradeOfferContract);
+      const request = buildTradeAssets(toPlayerId, 'request', elements.tradeRequestCash, elements.tradeRequestContract);
       const draft = {
         fromPlayerId,
         toPlayerId,
@@ -480,8 +482,22 @@ function bindEvents() {
 
   elements.tradeFrom.addEventListener('change', renderTradeAssetOptions);
   elements.tradeTo.addEventListener('change', renderTradeAssetOptions);
-  elements.tradeOfferProperty.addEventListener('change', () => tradeOfferSharesBinding?.refreshBounds());
-  elements.tradeRequestProperty.addEventListener('change', () => tradeRequestSharesBinding?.refreshBounds());
+  elements.tradeOfferAddShare?.addEventListener('click', () => addTradeShareLine('offer'));
+  elements.tradeRequestAddShare?.addEventListener('click', () => addTradeShareLine('request'));
+  elements.tradeOfferSharesList?.addEventListener('click', (event) => {
+    const removeButton = event.target.closest('[data-remove-trade-share]');
+    if (removeButton) removeTradeShareLine('offer', removeButton.dataset.removeTradeShare);
+  });
+  elements.tradeRequestSharesList?.addEventListener('click', (event) => {
+    const removeButton = event.target.closest('[data-remove-trade-share]');
+    if (removeButton) removeTradeShareLine('request', removeButton.dataset.removeTradeShare);
+  });
+  elements.tradeOfferSharesList?.addEventListener('change', (event) => {
+    if (event.target.matches('[data-trade-share-property]')) refreshTradeShareLine('offer', event.target.closest('[data-trade-share-line]')?.dataset.tradeShareLine);
+  });
+  elements.tradeRequestSharesList?.addEventListener('change', (event) => {
+    if (event.target.matches('[data-trade-share-property]')) refreshTradeShareLine('request', event.target.closest('[data-trade-share-line]')?.dataset.tradeShareLine);
+  });
 
   elements.contractForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1377,7 +1393,16 @@ function renderVotes() {
   `;
 }
 
+function resetTradeShareLines(side) {
+  for (const line of tradeShareLineBindings[side]) {
+    line.root.remove();
+  }
+  tradeShareLineBindings[side] = [];
+}
+
 function renderTradePanel() {
+  resetTradeShareLines('offer');
+  resetTradeShareLines('request');
   const ownPlayerId = isLanMode() ? networkSession.playerId : null;
   populatePlayerSelect(elements.tradeFrom, ownPlayerId || elements.tradeFrom.value || getCurrentPlayer(game).id);
   if (ownPlayerId) {
@@ -1396,16 +1421,16 @@ function renderTradePanel() {
 }
 
 function renderTradeAssetOptions() {
-  populateHoldingSelect(elements.tradeOfferProperty, elements.tradeFrom.value);
-  populateHoldingSelect(elements.tradeRequestProperty, elements.tradeTo.value);
+  ensureTradeShareLines('offer');
+  ensureTradeShareLines('request');
+  refreshTradeShareLines('offer');
+  refreshTradeShareLines('request');
   const offerContractIds = selectedContractIds(elements.tradeOfferContract);
   const requestContractIds = selectedContractIds(elements.tradeRequestContract);
   populateContractTradeSelect(elements.tradeOfferContract, elements.tradeFrom.value, offerContractIds);
   populateContractTradeSelect(elements.tradeRequestContract, elements.tradeTo.value, requestContractIds);
   tradeOfferCashBinding?.refreshBounds();
   tradeRequestCashBinding?.refreshBounds();
-  tradeOfferSharesBinding?.refreshBounds();
-  tradeRequestSharesBinding?.refreshBounds();
 }
 
 function renderPendingTrades() {
@@ -1592,23 +1617,135 @@ function createContractFromPayload(payload) {
   return createInheritanceContract(game, { holderId: payload.holderId, shareRefs: payload.shareRefs });
 }
 
-function buildTradeAssets(ownerId, propertySelect, sharesInput, cashInput, contractInput) {
-  const propertyId = propertySelect.value;
-  const shareCount = Number(sharesInput.value || 0);
+function buildTradeAssets(ownerId, side, cashInput, contractInput) {
   return {
     cash: Number(cashInput.value || 0),
-    shareRefs: propertyId ? firstShareRefs(ownerId, propertyId, shareCount) : [],
+    shareRefs: collectTradeShareRefs(ownerId, side),
     contractIds: selectedContractIds(contractInput),
   };
 }
 
-function firstShareRefs(playerId, propertyId, count) {
-  if (!propertyId || count <= 0) return [];
-  const property = game.board.find((space) => space.id === propertyId);
-  return property.shares
-    .filter((share) => share.ownerId === playerId)
-    .slice(0, count)
-    .map((share) => ({ spaceId: property.id, shareId: share.id }));
+function tradeShareSideConfig(side) {
+  return side === 'offer'
+    ? { list: elements.tradeOfferSharesList, playerId: () => elements.tradeFrom.value }
+    : { list: elements.tradeRequestSharesList, playerId: () => elements.tradeTo.value };
+}
+
+function ensureTradeShareLines(side) {
+  if (tradeShareLineBindings[side].length === 0) {
+    addTradeShareLine(side);
+  }
+}
+
+function addTradeShareLine(side, { propertyId = '', shareCount = 0 } = {}) {
+  const { list } = tradeShareSideConfig(side);
+  if (!list) return null;
+  const lineId = `line-${side}-${Date.now()}-${tradeShareLineBindings[side].length}`;
+  const root = document.createElement('div');
+  root.className = 'trade-share-line';
+  root.dataset.tradeShareLine = lineId;
+  root.innerHTML = `
+    <label>
+      <select data-trade-share-property aria-label="${escapeHtml(t('ui.offerShares'))}"></select>
+    </label>
+    <label class="range-input-label">
+      ${escapeHtml(t('ui.shareCount'))}
+      <span class="range-input-group">
+        <input data-trade-share-count type="number" min="0" step="1" value="0" />
+        <input data-trade-share-range type="range" min="0" max="0" step="1" value="0" aria-label="${escapeHtml(t('ui.shareCount'))}" />
+      </span>
+    </label>
+    <button class="mini-button trade-share-remove" type="button" data-remove-trade-share="${lineId}" aria-label="${escapeHtml(t('ui.removeTradeShare'))}">×</button>
+  `;
+  list.appendChild(root);
+  const propertySelect = root.querySelector('[data-trade-share-property]');
+  const countInput = root.querySelector('[data-trade-share-count]');
+  const rangeInput = root.querySelector('[data-trade-share-range]');
+  const binding = bindRangeAndNumber(rangeInput, countInput, {
+    getMin: () => 0,
+    getMax: () => {
+      const playerId = tradeShareSideConfig(side).playerId();
+      const selectedPropertyId = propertySelect.value;
+      if (!selectedPropertyId) return 0;
+      return getTradeableShareCount(game, selectedPropertyId, playerId);
+    },
+    getStep: () => 1,
+    integer: true,
+  });
+  const line = { id: lineId, root, propertySelect, binding };
+  tradeShareLineBindings[side].push(line);
+  propertySelect.addEventListener('change', () => refreshTradeShareLine(side, lineId));
+  populateTradeSharePropertySelect(propertySelect, tradeShareSideConfig(side).playerId(), propertyId);
+  binding.setValue(shareCount);
+  updateTradeShareRemoveButtons(side);
+  return line;
+}
+
+function removeTradeShareLine(side, lineId) {
+  if (tradeShareLineBindings[side].length <= 1) return;
+  const index = tradeShareLineBindings[side].findIndex((line) => line.id === lineId);
+  if (index === -1) return;
+  tradeShareLineBindings[side][index].root.remove();
+  tradeShareLineBindings[side].splice(index, 1);
+  updateTradeShareRemoveButtons(side);
+}
+
+function refreshTradeShareLine(side, lineId) {
+  const line = tradeShareLineBindings[side].find((candidate) => candidate.id === lineId);
+  if (!line) return;
+  populateTradeSharePropertySelect(line.propertySelect, tradeShareSideConfig(side).playerId(), line.propertySelect.value);
+  line.binding.refreshBounds();
+}
+
+function refreshTradeShareLines(side) {
+  for (const line of tradeShareLineBindings[side]) {
+    populateTradeSharePropertySelect(line.propertySelect, tradeShareSideConfig(side).playerId(), line.propertySelect.value);
+    line.binding.refreshBounds();
+  }
+  updateTradeShareRemoveButtons(side);
+}
+
+function updateTradeShareRemoveButtons(side) {
+  const canRemove = tradeShareLineBindings[side].length > 1;
+  for (const line of tradeShareLineBindings[side]) {
+    const button = line.root.querySelector('[data-remove-trade-share]');
+    if (button) button.disabled = !canRemove;
+  }
+}
+
+function populateTradeSharePropertySelect(select, playerId, selectedValue) {
+  const holdings = getPlayerPropertyHoldings(game, playerId)
+    .filter((holding) => getTradeableShareCount(game, holding.propertyId, playerId) > 0);
+  if (holdings.length === 0) {
+    select.innerHTML = '<option value="">无股份</option>';
+    select.value = '';
+    return;
+  }
+  const value = selectedValue && holdings.some((holding) => holding.propertyId === selectedValue)
+    ? selectedValue
+    : holdings[0].propertyId;
+  select.innerHTML = holdings
+    .map((holding) => {
+      const tradeableCount = getTradeableShareCount(game, holding.propertyId, playerId);
+      return `<option value="${holding.propertyId}">${escapeHtml(holding.property.name)} · 可交易 ${tradeableCount * SHARE_PERCENT}%</option>`;
+    })
+    .join('');
+  select.value = value;
+}
+
+function collectTradeShareRefs(ownerId, side) {
+  const countsByProperty = new Map();
+  for (const line of tradeShareLineBindings[side]) {
+    const propertyId = line.propertySelect.value;
+    const shareCount = line.binding.getValue();
+    if (!propertyId || shareCount <= 0) continue;
+    countsByProperty.set(propertyId, (countsByProperty.get(propertyId) ?? 0) + shareCount);
+  }
+  const shareRefs = [];
+  for (const [propertyId, shareCount] of countsByProperty) {
+    shareRefs.push(...getTradeableShareRefs(game, ownerId, propertyId, shareCount));
+  }
+  return shareRefs;
 }
 
 function firstEligibleShareRefs(playerId, propertyId, contractType, count) {
@@ -1709,20 +1846,6 @@ function updateContractShareCountLimit() {
   if (current < 1 || current > eligibleCount) {
     elements.contractShareCount.value = String(Math.min(eligibleCount, Math.max(current, 1)));
   }
-}
-
-function populateHoldingSelect(select, playerId) {
-  const holdings = getPlayerPropertyHoldings(game, playerId);
-  if (holdings.length === 0) {
-    select.innerHTML = '<option value="">无股份</option>';
-    select.value = '';
-    return;
-  }
-  const previous = select.value;
-  select.innerHTML = holdings
-    .map((holding) => `<option value="${holding.propertyId}">${escapeHtml(holding.property.name)} ${holding.percent}%</option>`)
-    .join('');
-  select.value = holdings.some((holding) => holding.propertyId === previous) ? previous : holdings[0].propertyId;
 }
 
 function voteTotals(vote) {
@@ -1863,7 +1986,18 @@ function contractNames(contractIds) {
 function assetSummary(assets) {
   const parts = [];
   if (assets.cash) parts.push(`现金 $${formatMoney(assets.cash)}`);
-  if (assets.shareRefs?.length) parts.push(`股份 ${assets.shareRefs.length * SHARE_PERCENT}%`);
+  if (assets.shareRefs?.length) {
+    const grouped = new Map();
+    for (const shareRef of assets.shareRefs) {
+      grouped.set(shareRef.spaceId, (grouped.get(shareRef.spaceId) ?? 0) + 1);
+    }
+    const shareParts = [...grouped.entries()].map(([spaceId, count]) => {
+      const property = game.board.find((space) => space.id === spaceId);
+      const label = property ? property.name : spaceId;
+      return `${label} ${count * SHARE_PERCENT}%`;
+    });
+    parts.push(`股份 ${shareParts.join('、')}`);
+  }
   const names = contractNames(assets.contractIds ?? []);
   if (names.length) parts.push(`合同 ${names.join('、')}`);
   return parts.join(' + ') || '无';
@@ -2010,27 +2144,6 @@ function initRangeBindings() {
     getStep: () => 0.1,
   });
 
-  tradeOfferSharesBinding = bindRangeAndNumber(elements.tradeOfferSharesRange, elements.tradeOfferShares, {
-    getMin: () => 0,
-    getMax: () => {
-      const propertyId = elements.tradeOfferProperty.value;
-      if (!propertyId) return 0;
-      return getPlayerShareCount(game, propertyId, elements.tradeFrom.value);
-    },
-    getStep: () => 1,
-    integer: true,
-  });
-
-  tradeRequestSharesBinding = bindRangeAndNumber(elements.tradeRequestSharesRange, elements.tradeRequestShares, {
-    getMin: () => 0,
-    getMax: () => {
-      const propertyId = elements.tradeRequestProperty.value;
-      if (!propertyId) return 0;
-      return getPlayerShareCount(game, propertyId, elements.tradeTo.value);
-    },
-    getStep: () => 1,
-    integer: true,
-  });
 }
 
 function formatMoney(value) {

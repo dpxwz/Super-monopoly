@@ -22,6 +22,14 @@ test('main play screen uses the cinematic map three-column layout', () => {
   assert.notEqual(centerIndex, -1, 'event log should live inside the map center panel');
 });
 
+test('trade overlay supports multiple share lines per trade side', () => {
+  expectMarkup('id="trade-offer-shares-list"', 'offer share lines container');
+  expectMarkup('id="trade-request-shares-list"', 'request share lines container');
+  expectMarkup('id="trade-offer-add-share"', 'add offer share line button');
+  expectMarkup('id="trade-request-add-share"', 'add request share line button');
+  expectMarkup('class="trade-shares-list"', 'trade share line list');
+});
+
 test('trade controls and player detail live in overlays instead of the home sidebar', () => {
   expectMarkup('id="trade-overlay"', 'trade overlay');
   expectMarkup('data-open-trade', 'trade button trigger');
