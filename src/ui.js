@@ -56,6 +56,9 @@ const playerColors = ['var(--player-1)', 'var(--player-2)', 'var(--player-3)', '
 const bankColor = 'rgba(174, 184, 199, 0.48)';
 
 const elements = {
+  appShell: document.querySelector('#app-shell'),
+  lobbyScreen: document.querySelector('#lobby-screen'),
+  gameScreen: document.querySelector('#game-screen'),
   setupForm: document.querySelector('#setup-form'),
   setupSubmit: document.querySelector('#setup-form button[type="submit"]'),
   modeRadios: [...document.querySelectorAll('input[name="game-mode"]')],
@@ -143,6 +146,7 @@ const elements = {
 };
 
 let game = createGame(['玩家 1', '玩家 2']);
+let gameScreenActive = false;
 let lanServerUrls = [];
 let actionPending = false;
 let networkSession = {
@@ -163,6 +167,11 @@ window.superMonopoly = {
   get networkSession() {
     return networkSession;
   },
+  get gameScreenActive() {
+    return gameScreenActive;
+  },
+  enterGameScreen,
+  exitGameScreen,
 };
 
 elements.board.style.setProperty('--board-side-length', BOARD_SIDE_LENGTH);
@@ -263,6 +272,7 @@ function bindEvents() {
           .map((name) => String(name).trim())
           .filter(Boolean);
         game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2']);
+        enterGameScreen();
         setMessage(t('msg.newGameStarted'));
         return;
       }
@@ -280,6 +290,7 @@ function bindEvents() {
   elements.lanStartButton?.addEventListener('click', () => {
     safeAction(async () => {
       await startLanGame();
+      enterGameScreen();
       setMessage('联机游戏已开始。');
     });
   });
@@ -622,6 +633,45 @@ async function safeAction(action) {
   }
 }
 
+function isInGameScreen() {
+  return gameScreenActive;
+}
+
+function enterGameScreen({ immediate = false } = {}) {
+  if (gameScreenActive) return;
+  gameScreenActive = true;
+  elements.appShell?.classList.add('is-in-game');
+  elements.lobbyScreen?.setAttribute('aria-hidden', 'true');
+  elements.gameScreen?.setAttribute('aria-hidden', 'false');
+  if (immediate) {
+    elements.appShell?.classList.add('is-in-game-immediate');
+    window.requestAnimationFrame(() => {
+      elements.appShell?.classList.remove('is-in-game-immediate');
+    });
+  }
+  render();
+}
+
+function exitGameScreen({ immediate = false } = {}) {
+  if (!gameScreenActive) return;
+  gameScreenActive = false;
+  elements.appShell?.classList.remove('is-in-game');
+  elements.lobbyScreen?.setAttribute('aria-hidden', 'false');
+  elements.gameScreen?.setAttribute('aria-hidden', 'true');
+  if (immediate) {
+    elements.appShell?.classList.add('is-in-game-immediate');
+    window.requestAnimationFrame(() => {
+      elements.appShell?.classList.remove('is-in-game-immediate');
+    });
+  }
+}
+
+function syncGameScreenFromSession({ immediate = false } = {}) {
+  if (isLanStarted() && !gameScreenActive) {
+    enterGameScreen({ immediate });
+  }
+}
+
 function isLanMode() {
   return networkSession.mode === 'lan';
 }
@@ -799,6 +849,7 @@ async function leaveLanSession() {
     pollTimer: null,
   };
   removeRoomFromUrl();
+  exitGameScreen({ immediate: true });
   elements.modeRadios.forEach((radio) => {
     radio.checked = radio.value === 'local';
   });
@@ -835,6 +886,7 @@ async function resumeStoredLanSession() {
     applyLanSnapshot(snapshot);
     rememberRoomInUrl();
     startLanPolling();
+    syncGameScreenFromSession({ immediate: true });
     setMessage(`已恢复局域网房间 ${networkSession.roomCode}。`);
     render();
   } catch (error) {
@@ -942,6 +994,10 @@ const MAX_PLAYERS_FOR_UI = 4;
 function render() {
   renderModeChrome();
   renderNetworkPanel();
+  syncGameScreenFromSession();
+  if (!isInGameScreen()) {
+    return;
+  }
   if (isLanMode() && !isLanStarted()) {
     renderLobbyState();
     renderChatPanel();

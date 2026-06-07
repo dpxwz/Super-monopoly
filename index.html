@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
+    <main class="app-shell" id="app-shell">
       <div class="language-switcher">
         <select id="lang-switcher" aria-label="Language">
           <option value="zh">中文</option>
@@ -16,7 +16,8 @@
         </select>
       </div>
 
-      <section class="hero" aria-labelledby="game-title">
+      <div class="screen-stack">
+      <section class="lobby-screen hero" id="lobby-screen" aria-labelledby="game-title">
         <div class="hero-copy-block">
           <p class="eyebrow" data-i18n="ui.eyebrow">local web board game</p>
           <h1 id="game-title">Super Monopoly</h1>
@@ -87,7 +88,7 @@
         </form>
       </section>
 
-      <section class="game-layout" aria-label="游戏区">
+      <section class="game-screen game-layout" id="game-screen" aria-label="游戏区" aria-hidden="true">
         <aside class="left-rail" aria-label="玩家和聊天室">
           <section class="panel-section player-roster-panel">
             <div class="section-heading">
@@ -215,6 +216,7 @@
           </section>
         </aside>
       </section>
+      </div>
     </main>
 
     <div id="trade-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="trade-heading" hidden>

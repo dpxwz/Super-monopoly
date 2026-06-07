@@ -10,6 +10,18 @@ function expectMarkup(fragment, label = fragment) {
   assert.ok(indexHtml.includes(fragment), `index.html should include ${label}`);
 }
 
+test('lobby and play screens are split with a dedicated game screen container', () => {
+  expectMarkup('id="lobby-screen"', 'lobby screen');
+  expectMarkup('class="lobby-screen hero"', 'lobby screen class');
+  expectMarkup('id="game-screen"', 'game screen');
+  expectMarkup('class="game-screen game-layout"', 'game screen class');
+  expectMarkup('class="screen-stack"', 'screen stack wrapper');
+
+  const lobbyIndex = indexHtml.indexOf('id="lobby-screen"');
+  const gameIndex = indexHtml.indexOf('id="game-screen"');
+  assert.ok(lobbyIndex >= 0 && gameIndex > lobbyIndex, 'lobby screen should appear before the game screen');
+});
+
 test('main play screen uses the cinematic map three-column layout', () => {
   expectMarkup('class="left-rail"', 'left rail for players and chat');
   expectMarkup('class="board-stage"', 'central board stage');
