@@ -138,7 +138,6 @@
                   <button id="buy-button" type="button" data-i18n="ui.buttonBuy" disabled>购买股份</button>
                   <button id="decline-button" type="button" data-i18n="ui.buttonDecline" disabled>放弃</button>
                   <button id="end-button" type="button" data-i18n="ui.buttonEndTurn" disabled>结束回合</button>
-                  <button id="bankruptcy-button" type="button" class="danger-button" data-i18n="ui.buttonBankruptcy" disabled>主动破产</button>
                   <button id="new-game-button" type="button" data-i18n="ui.buttonRestart">重新开始</button>
                 </div>
                 <form id="share-purchase-form" class="share-purchase-form" hidden>
@@ -178,7 +177,10 @@
         </section>
 
         <aside class="right-rail" aria-label="当前玩家信息">
-          <button class="trade-button" type="button" data-open-trade>交易</button>
+          <div class="right-rail-actions">
+            <button class="trade-button" type="button" data-open-trade>交易</button>
+            <button id="bankruptcy-button" type="button" class="bankruptcy-button danger-button" data-i18n="ui.buttonBankruptcy" disabled>主动破产</button>
+          </div>
 
           <section class="panel-section current-player-panel">
             <div class="section-heading">

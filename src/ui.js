@@ -74,6 +74,7 @@ const elements = {
   roundLabel: document.querySelector('#round-label'),
   phaseLabel: document.querySelector('#phase-label'),
   diceLabel: document.querySelector('#dice-label'),
+  controls: document.querySelector('.controls'),
   rollButton: document.querySelector('#roll-button'),
   buyButton: document.querySelector('#buy-button'),
   declineButton: document.querySelector('#decline-button'),
@@ -960,12 +961,8 @@ function renderLobbyState() {
   elements.diceLabel.textContent = networkSession.playerId ? `你是 ${networkSession.playerId}` : '未加入';
   elements.aliveCount.textContent = `${players.length} 人已加入`;
   renderBoard();
-  elements.rollButton.disabled = true;
-  elements.buyButton.disabled = true;
-  elements.declineButton.disabled = true;
-  elements.endButton.disabled = true;
+  hideTurnControls();
   elements.bankruptcyButton.disabled = true;
-  elements.newGameButton.disabled = true;
   if (elements.openTradeButton) elements.openTradeButton.disabled = true;
   if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = true;
   elements.offerText.textContent = '';
@@ -1157,17 +1154,44 @@ function renderSharePurchasePreview() {
 function renderControls() {
   const hasOffer = Boolean(game.pendingOffer);
   const currentPlayer = getCurrentPlayer(game);
-  const processPaused = game.phase === 'auctionPending' || game.phase === 'buildPayment';
+  const gameOver = game.status === 'gameOver';
   const cashLocked = !currentPlayer.bankrupt && currentPlayer.cash <= 0;
   const networkLocked = isLanMode() && (!isLanStarted() || currentPlayer.id !== networkSession.playerId);
   const networkOfferLocked = isLanMode() && game.pendingOffer?.playerId !== networkSession.playerId;
-  elements.rollButton.disabled = actionPending || game.phase !== 'roll' || game.status === 'gameOver' || cashLocked || networkLocked;
-  elements.buyButton.disabled = actionPending || !hasOffer || game.status === 'gameOver' || processPaused || cashLocked || networkLocked || networkOfferLocked;
-  elements.declineButton.disabled = actionPending || !hasOffer || game.status === 'gameOver' || processPaused || networkLocked || networkOfferLocked;
-  elements.endButton.disabled = actionPending || game.phase === 'roll' || hasOffer || game.status === 'gameOver' || processPaused || game.phase === 'vote' || cashLocked || networkLocked;
-  elements.bankruptcyButton.disabled = actionPending || game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'vote' || currentPlayer.bankrupt || networkLocked;
-  elements.newGameButton.disabled = actionPending || (isLanMode() && (!networkSession.isHost || !isLanStarted()));
+  const canAct = !actionPending && !networkLocked;
+
+  const showRoll = canAct && !gameOver && game.phase === 'roll' && !cashLocked;
+  const showPurchase = canAct && !gameOver && game.phase === 'action' && hasOffer && !cashLocked && !networkOfferLocked;
+  const showEnd = canAct && !gameOver && game.phase === 'end' && !hasOffer && !cashLocked;
+  const showNewGame = gameOver && (!isLanMode() || (networkSession.isHost && isLanStarted()));
+
+  setTurnControlButton(elements.rollButton, showRoll);
+  setTurnControlButton(elements.buyButton, showPurchase);
+  setTurnControlButton(elements.declineButton, showPurchase);
+  setTurnControlButton(elements.endButton, showEnd);
+  setTurnControlButton(elements.newGameButton, showNewGame);
+
+  if (elements.controls) {
+    elements.controls.hidden = !(showRoll || showPurchase || showEnd || showNewGame);
+  }
+
+  elements.bankruptcyButton.disabled = actionPending || gameOver || game.phase === 'auctionPending' || game.phase === 'vote' || currentPlayer.bankrupt || networkLocked;
   renderInteractionLocks();
+}
+
+function setTurnControlButton(button, visible) {
+  if (!button) return;
+  button.hidden = !visible;
+  button.disabled = !visible;
+}
+
+function hideTurnControls() {
+  setTurnControlButton(elements.rollButton, false);
+  setTurnControlButton(elements.buyButton, false);
+  setTurnControlButton(elements.declineButton, false);
+  setTurnControlButton(elements.endButton, false);
+  setTurnControlButton(elements.newGameButton, false);
+  if (elements.controls) elements.controls.hidden = true;
 }
 
 function renderBoard() {
@@ -1187,10 +1211,10 @@ function renderBoard() {
     square.style.gridRow = String(grid.row);
     square.style.setProperty('--stripe', stripeFor(space));
 
+    const placement = squareDetailPlacement(grid);
     square.innerHTML = `
-      <h3 class="square-name">${escapeHtml(cityName(space))}</h3>
-      <p class="square-meta">${spaceMeta(space)}</p>
-      ${space.type === 'property' ? shareBarMarkup(space) : ''}
+      ${squareCompactMarkup(space)}
+      ${space.type === 'property' ? squareDetailMarkup(space, placement) : ''}
       <div class="tokens">${tokens.map(tokenMarkup).join('')}</div>
     `;
 
@@ -1721,12 +1745,40 @@ function holderColor(playerId) {
   return playerColors[index] ?? 'var(--accent)';
 }
 
-function spaceMeta(space) {
+function squareCompactMarkup(space) {
   if (space.type === 'start') {
-    return escapeHtml(space.description ?? `经过获得 $${formatMoney(space.bonus)}`);
+    return `
+      <h3 class="square-name">${escapeHtml(cityName(space))}</h3>
+      <p class="square-price muted">${escapeHtml(t('ui.passBonusMeta', formatMoney(space.bonus)))}</p>
+    `;
   }
-  const houseText = space.houses ? ` · ${'★'.repeat(space.houses)}` : '';
-  return `${escapeHtml(space.countryName)} · ${escapeHtml(space.colorName)} · $${formatMoney(space.price)} · 租 $${formatMoney(getSpaceRent(space))} · 银行 ${getBankShareCount(game, space.id) * SHARE_PERCENT}%${houseText}`;
+  return `
+    <h3 class="square-name">${escapeHtml(cityName(space))}</h3>
+    <p class="square-price">$${formatMoney(space.price)}</p>
+  `;
+}
+
+function squareDetailMarkup(space, placement) {
+  const rentRows = space.rent.map((rent, index) => {
+    const label = index === 0 ? t('ui.rentVacant') : t('ui.rentHouses', index);
+    const activeClass = index === (space.houses ?? 0) ? ' is-active' : '';
+    return `<li class="square-rent-row${activeClass}"><span>${escapeHtml(label)}</span><span>$${formatMoney(rent)}</span></li>`;
+  }).join('');
+  return `
+    <div class="square-detail detail-${placement}" role="tooltip">
+      <p class="square-detail-cost">${escapeHtml(t('ui.houseCostLabel', formatMoney(space.houseCost)))}</p>
+      <ul class="square-rent-table">${rentRows}</ul>
+    </div>
+  `;
+}
+
+function squareDetailPlacement(grid) {
+  const side = BOARD_SIDE_LENGTH;
+  if (grid.row === 1) return 'below';
+  if (grid.row === side) return 'above';
+  if (grid.column === side) return 'left';
+  if (grid.column === 1) return 'right';
+  return 'above';
 }
 
 function tokenMarkup(player) {
