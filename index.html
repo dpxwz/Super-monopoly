@@ -141,9 +141,12 @@
                   <button id="new-game-button" type="button" data-i18n="ui.buttonRestart">重新开始</button>
                 </div>
                 <form id="share-purchase-form" class="share-purchase-form" hidden>
-                  <label>
+                  <label class="range-input-label">
                     购买银行股份
-                    <input id="share-count" type="number" min="1" step="1" value="1" />
+                    <span class="range-input-group">
+                      <input id="share-count" type="number" min="1" step="1" value="1" />
+                      <input id="share-count-range" type="range" min="1" max="1" step="1" value="1" aria-label="购买银行股份滑条" />
+                    </span>
                   </label>
                   <span id="share-preview" class="badge">10% · $0</span>
                 </form>
@@ -230,22 +233,53 @@
             <label>接收方<select id="trade-to"></select></label>
           </div>
           <div class="form-row two-col">
-            <label>给出现金<input id="trade-offer-cash" type="number" min="0" step="0.1" value="0" /></label>
-            <label>索要现金<input id="trade-request-cash" type="number" min="0" step="0.1" value="0" /></label>
+            <label class="range-input-label">
+              给出现金
+              <span class="range-input-group">
+                <input id="trade-offer-cash" type="number" min="0" step="0.1" value="0" />
+                <input id="trade-offer-cash-range" type="range" min="0" max="0" step="0.1" value="0" aria-label="给出现金滑条" />
+              </span>
+            </label>
+            <label class="range-input-label">
+              索要现金
+              <span class="range-input-group">
+                <input id="trade-request-cash" type="number" min="0" step="0.1" value="0" />
+                <input id="trade-request-cash-range" type="range" min="0" max="0" step="0.1" value="0" aria-label="索要现金滑条" />
+              </span>
+            </label>
           </div>
           <div class="form-row two-col">
             <label>给出股份<select id="trade-offer-property"></select></label>
-            <label>股数<input id="trade-offer-shares" type="number" min="0" step="1" value="0" /></label>
+            <label class="range-input-label">
+              股数
+              <span class="range-input-group">
+                <input id="trade-offer-shares" type="number" min="0" step="1" value="0" />
+                <input id="trade-offer-shares-range" type="range" min="0" max="0" step="1" value="0" aria-label="给出股数滑条" />
+              </span>
+            </label>
           </div>
           <div class="form-row two-col">
             <label>索要股份<select id="trade-request-property"></select></label>
-            <label>股数<input id="trade-request-shares" type="number" min="0" step="1" value="0" /></label>
+            <label class="range-input-label">
+              股数
+              <span class="range-input-group">
+                <input id="trade-request-shares" type="number" min="0" step="1" value="0" />
+                <input id="trade-request-shares-range" type="range" min="0" max="0" step="1" value="0" aria-label="索要股数滑条" />
+              </span>
+            </label>
           </div>
           <div class="form-row trade-contract-row">
-            <label>给出合同 ID<input id="trade-offer-contract" placeholder="例如 c1，可空" /></label>
-            <label>索要合同 ID<input id="trade-request-contract" placeholder="例如 c2，可空" /></label>
+            <label data-i18n-label="ui.offerContract">
+              给出合同
+              <select id="trade-offer-contract" multiple size="3" aria-describedby="trade-contract-hint"></select>
+            </label>
+            <label data-i18n-label="ui.requestContract">
+              索要合同
+              <select id="trade-request-contract" multiple size="3" aria-describedby="trade-contract-hint"></select>
+            </label>
             <button class="mini-button trade-contract-button" type="button" data-open-trade-contract>创建合同</button>
           </div>
+          <p id="trade-contract-hint" class="muted compact-hint" data-i18n="ui.contractSelectHint">可多选；留空表示不附带合同</p>
           <label>备注<input id="trade-note" maxlength="80" placeholder="可空" /></label>
           <button type="submit">发起交易</button>
         </form>

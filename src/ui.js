@@ -21,6 +21,7 @@ import {
   getBuildEligibility,
   getColorGroupProperties,
   getCurrentPlayer,
+  getContractDisplayName,
   getDemolishEligibility,
   getPlayerPropertyHoldings,
   getPlayerShareCount,
@@ -83,6 +84,7 @@ const elements = {
   newGameButton: document.querySelector('#new-game-button'),
   sharePurchaseForm: document.querySelector('#share-purchase-form'),
   shareCount: document.querySelector('#share-count'),
+  shareCountRange: document.querySelector('#share-count-range'),
   sharePreview: document.querySelector('#share-preview'),
   offerText: document.querySelector('#offer-text'),
   auctionWarning: document.querySelector('#auction-warning'),
@@ -94,11 +96,15 @@ const elements = {
   tradeFrom: document.querySelector('#trade-from'),
   tradeTo: document.querySelector('#trade-to'),
   tradeOfferCash: document.querySelector('#trade-offer-cash'),
+  tradeOfferCashRange: document.querySelector('#trade-offer-cash-range'),
   tradeRequestCash: document.querySelector('#trade-request-cash'),
+  tradeRequestCashRange: document.querySelector('#trade-request-cash-range'),
   tradeOfferProperty: document.querySelector('#trade-offer-property'),
   tradeOfferShares: document.querySelector('#trade-offer-shares'),
+  tradeOfferSharesRange: document.querySelector('#trade-offer-shares-range'),
   tradeRequestProperty: document.querySelector('#trade-request-property'),
   tradeRequestShares: document.querySelector('#trade-request-shares'),
+  tradeRequestSharesRange: document.querySelector('#trade-request-shares-range'),
   tradeOfferContract: document.querySelector('#trade-offer-contract'),
   tradeRequestContract: document.querySelector('#trade-request-contract'),
   tradeNote: document.querySelector('#trade-note'),
@@ -160,6 +166,12 @@ window.superMonopoly = {
 };
 
 elements.board.style.setProperty('--board-side-length', BOARD_SIDE_LENGTH);
+
+let sharePurchaseBinding;
+let tradeOfferCashBinding;
+let tradeRequestCashBinding;
+let tradeOfferSharesBinding;
+let tradeRequestSharesBinding;
 
 // ── Static HTML translation ──
 // Translates elements with data-i18n, data-i18n-label, data-i18n-placeholder attributes.
@@ -290,7 +302,7 @@ function bindEvents() {
     event.preventDefault();
     buySelectedShares();
   });
-  elements.shareCount.addEventListener('input', renderSharePurchasePreview);
+  initRangeBindings();
 
   elements.declineButton.addEventListener('click', () => {
     safeAction(async () => {
@@ -468,6 +480,8 @@ function bindEvents() {
 
   elements.tradeFrom.addEventListener('change', renderTradeAssetOptions);
   elements.tradeTo.addEventListener('change', renderTradeAssetOptions);
+  elements.tradeOfferProperty.addEventListener('change', () => tradeOfferSharesBinding?.refreshBounds());
+  elements.tradeRequestProperty.addEventListener('change', () => tradeRequestSharesBinding?.refreshBounds());
 
   elements.contractForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -490,10 +504,11 @@ function bindEvents() {
         game.contractCreationContext = null;
       }
       const contract = game.contracts.at(-1);
-      appendTradeOfferContractId(contract?.id);
-      setMessage(t('msg.contractCreated', contract?.id ?? ''));
+      const newContractId = contract?.id;
+      setMessage(t('msg.contractCreated', contract ? getContractDisplayName(game, contract) : ''));
       closeContractOverlay();
       render();
+      if (newContractId) selectTradeOfferContract(newContractId);
     });
   });
   elements.contractProperty.addEventListener('change', renderContractFormOptions);
@@ -1113,11 +1128,7 @@ function openPlayerDetail(playerId) {
   elements.playerDetailContracts.innerHTML = contracts.length
     ? contracts.map((contract) => `
       <article class="contract-card">
-        <div class="card-topline">
-          <strong>${escapeHtml(contract.id)} · ${contractTypeLabel(contract.type)}</strong>
-          <span class="badge">${contract.status}</span>
-        </div>
-        <p class="muted">${escapeHtml(contractDetail(contract))}</p>
+        <strong>${escapeHtml(getContractDisplayName(game, contract))}</strong>
       </article>
     `).join('')
     : '<p class="empty-state">没有合同。</p>';
@@ -1133,10 +1144,11 @@ function renderOffer() {
   const property = game.board.find((space) => space.id === game.pendingOffer.spaceId);
   elements.offerText.textContent = `可购买「${property.name}」银行剩余股份：最多 ${game.pendingOffer.maxShareCount * SHARE_PERCENT}%，每 10% $${formatMoney(game.pendingOffer.pricePerShare)}。`;
   elements.sharePurchaseForm.hidden = false;
-  elements.shareCount.max = String(game.pendingOffer.maxShareCount);
   const current = Number(elements.shareCount.value || 1);
   if (current < 1 || current > game.pendingOffer.maxShareCount) {
-    elements.shareCount.value = String(game.pendingOffer.maxShareCount);
+    sharePurchaseBinding?.setValue(game.pendingOffer.maxShareCount);
+  } else {
+    sharePurchaseBinding?.refreshBounds();
   }
   renderSharePurchasePreview();
 }
@@ -1386,6 +1398,14 @@ function renderTradePanel() {
 function renderTradeAssetOptions() {
   populateHoldingSelect(elements.tradeOfferProperty, elements.tradeFrom.value);
   populateHoldingSelect(elements.tradeRequestProperty, elements.tradeTo.value);
+  const offerContractIds = selectedContractIds(elements.tradeOfferContract);
+  const requestContractIds = selectedContractIds(elements.tradeRequestContract);
+  populateContractTradeSelect(elements.tradeOfferContract, elements.tradeFrom.value, offerContractIds);
+  populateContractTradeSelect(elements.tradeRequestContract, elements.tradeTo.value, requestContractIds);
+  tradeOfferCashBinding?.refreshBounds();
+  tradeRequestCashBinding?.refreshBounds();
+  tradeOfferSharesBinding?.refreshBounds();
+  tradeRequestSharesBinding?.refreshBounds();
 }
 
 function renderPendingTrades() {
@@ -1425,12 +1445,7 @@ function renderContracts() {
   }
   elements.contracts.innerHTML = contracts.map((contract) => `
     <article class="contract-card">
-      <div class="card-topline">
-        <strong>${escapeHtml(contract.id)} · ${contractTypeLabel(contract.type)}</strong>
-        <span class="badge">${contract.status}</span>
-      </div>
-      <p class="muted">持有人：${escapeHtml(playerName(contract.holderId))}</p>
-      <p class="muted">${escapeHtml(contractDetail(contract))}</p>
+      <strong>${escapeHtml(getContractDisplayName(game, contract))}</strong>
     </article>
   `).join('');
 }
@@ -1477,16 +1492,27 @@ function updateContractFormVisibility() {
   });
 }
 
-function appendTradeOfferContractId(contractId) {
-  if (!contractId || !elements.tradeOfferContract) return;
-  const existing = elements.tradeOfferContract.value
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (!existing.includes(contractId)) {
-    existing.push(contractId);
-    elements.tradeOfferContract.value = existing.join(', ');
+function selectedContractIds(contractSelect) {
+  if (!contractSelect) return [];
+  return [...contractSelect.selectedOptions].map((option) => option.value).filter(Boolean);
+}
+
+function populateContractTradeSelect(select, playerId, selectedIds = []) {
+  if (!select) return;
+  const contracts = game.contracts.filter((contract) => contract.holderId === playerId && contract.status === 'active');
+  select.innerHTML = contracts.map((contract) => (
+    `<option value="${escapeHtml(contract.id)}">${escapeHtml(getContractDisplayName(game, contract))}</option>`
+  )).join('');
+  for (const contractId of selectedIds) {
+    const option = [...select.options].find((candidate) => candidate.value === contractId);
+    if (option) option.selected = true;
   }
+}
+
+function selectTradeOfferContract(contractId) {
+  if (!contractId || !elements.tradeOfferContract) return;
+  const option = [...elements.tradeOfferContract.options].find((candidate) => candidate.value === contractId);
+  if (option) option.selected = true;
 }
 
 function renderBankruptcyWarning() {
@@ -1572,10 +1598,7 @@ function buildTradeAssets(ownerId, propertySelect, sharesInput, cashInput, contr
   return {
     cash: Number(cashInput.value || 0),
     shareRefs: propertyId ? firstShareRefs(ownerId, propertyId, shareCount) : [],
-    contractIds: contractInput.value
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean),
+    contractIds: selectedContractIds(contractInput),
   };
 }
 
@@ -1828,30 +1851,21 @@ function phaseText(phase) {
   }[phase] ?? phase;
 }
 
-function contractTypeLabel(type) {
-  return {
-    [CONTRACT_TYPES.FREE_PASS]: t('contract.freePass'),
-    [CONTRACT_TYPES.INHERITANCE]: t('contract.inheritance'),
-    [CONTRACT_TYPES.VOTE_SUPPORT]: t('contract.voteSupport'),
-  }[type] ?? type;
-}
-
-function contractDetail(contract) {
-  if (contract.type === CONTRACT_TYPES.VOTE_SUPPORT) {
-    const property = game.board.find((space) => space.id === contract.targetSpaceId);
-    const actionText = contract.voteType === 'demolish' ? t('action.demolish') : t('action.build');
-    return `${playerName(contract.obligorId)} 下一次 ${property?.name ?? contract.targetSpaceId} ${actionText}投票必须${contract.stance === 'yes' ? t('ui.support') : t('ui.oppose')}；剩余 ${contract.remainingUses} 次。`;
-  }
-  const refs = contract.shareRefs ?? [];
-  const property = refs[0] ? game.board.find((space) => space.id === refs[0].spaceId) : null;
-  return `${property?.name ?? '未知地块'} ${refs.length * SHARE_PERCENT}% 绑定股份。`;
+function contractNames(contractIds) {
+  return contractIds
+    .map((contractId) => {
+      const contract = game.contracts.find((candidate) => candidate.id === contractId);
+      return contract ? getContractDisplayName(game, contract) : null;
+    })
+    .filter(Boolean);
 }
 
 function assetSummary(assets) {
   const parts = [];
   if (assets.cash) parts.push(`现金 $${formatMoney(assets.cash)}`);
   if (assets.shareRefs?.length) parts.push(`股份 ${assets.shareRefs.length * SHARE_PERCENT}%`);
-  if (assets.contractIds?.length) parts.push(`合同 ${assets.contractIds.join(', ')}`);
+  const names = contractNames(assets.contractIds ?? []);
+  if (names.length) parts.push(`合同 ${names.join('、')}`);
   return parts.join(' + ') || '无';
 }
 
@@ -1892,6 +1906,131 @@ function gridPosition(index) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function roundToStep(value, step) {
+  if (!Number.isFinite(value)) return 0;
+  if (step >= 1) return Math.round(value);
+  const decimals = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function bindRangeAndNumber(range, number, {
+  getMin = () => 0,
+  getMax = () => 0,
+  getStep = () => 1,
+  integer = false,
+  onUpdate,
+} = {}) {
+  if (!range || !number) {
+    return {
+      refreshBounds() {},
+      setValue() {},
+      getValue: () => 0,
+    };
+  }
+
+  let syncing = false;
+
+  function applyBounds() {
+    const min = getMin();
+    const max = Math.max(min, getMax());
+    const step = getStep();
+    const bounds = { min, max, step };
+    for (const input of [range, number]) {
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+    }
+    return bounds;
+  }
+
+  function normalize(raw, min, max, step) {
+    let value = Number(raw);
+    if (!Number.isFinite(value)) value = min;
+    value = clamp(value, min, max);
+    value = roundToStep(value, step);
+    if (integer) value = Math.round(value);
+    return value;
+  }
+
+  function setValue(raw, source) {
+    const { min, max, step } = applyBounds();
+    const normalized = normalize(raw, min, max, step);
+    syncing = true;
+    const display = String(normalized);
+    number.value = display;
+    range.value = display;
+    syncing = false;
+    onUpdate?.(normalized, source);
+    return normalized;
+  }
+
+  function handleInput(source, raw) {
+    if (syncing) return;
+    setValue(raw, source);
+  }
+
+  range.addEventListener('input', () => handleInput('range', range.value));
+  number.addEventListener('input', () => handleInput('number', number.value));
+  number.addEventListener('change', () => handleInput('number', number.value));
+
+  return {
+    refreshBounds() {
+      setValue(number.value || range.value || getMin(), 'refresh');
+    },
+    setValue(value) {
+      return setValue(value, 'set');
+    },
+    getValue() {
+      return Number(number.value || 0);
+    },
+  };
+}
+
+function initRangeBindings() {
+  sharePurchaseBinding = bindRangeAndNumber(elements.shareCountRange, elements.shareCount, {
+    getMin: () => 1,
+    getMax: () => game.pendingOffer?.maxShareCount ?? 1,
+    getStep: () => 1,
+    integer: true,
+    onUpdate: () => renderSharePurchasePreview(),
+  });
+
+  tradeOfferCashBinding = bindRangeAndNumber(elements.tradeOfferCashRange, elements.tradeOfferCash, {
+    getMin: () => 0,
+    getMax: () => Math.max(0, game.players.find((player) => player.id === elements.tradeFrom.value)?.cash ?? 0),
+    getStep: () => 0.1,
+  });
+
+  tradeRequestCashBinding = bindRangeAndNumber(elements.tradeRequestCashRange, elements.tradeRequestCash, {
+    getMin: () => 0,
+    getMax: () => Math.max(0, game.players.find((player) => player.id === elements.tradeTo.value)?.cash ?? 0),
+    getStep: () => 0.1,
+  });
+
+  tradeOfferSharesBinding = bindRangeAndNumber(elements.tradeOfferSharesRange, elements.tradeOfferShares, {
+    getMin: () => 0,
+    getMax: () => {
+      const propertyId = elements.tradeOfferProperty.value;
+      if (!propertyId) return 0;
+      return getPlayerShareCount(game, propertyId, elements.tradeFrom.value);
+    },
+    getStep: () => 1,
+    integer: true,
+  });
+
+  tradeRequestSharesBinding = bindRangeAndNumber(elements.tradeRequestSharesRange, elements.tradeRequestShares, {
+    getMin: () => 0,
+    getMax: () => {
+      const propertyId = elements.tradeRequestProperty.value;
+      if (!propertyId) return 0;
+      return getPlayerShareCount(game, propertyId, elements.tradeTo.value);
+    },
+    getStep: () => 1,
+    integer: true,
+  });
 }
 
 function formatMoney(value) {

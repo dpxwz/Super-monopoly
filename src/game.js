@@ -1,4 +1,4 @@
-import { t } from './i18n.js';
+import { t, cityName, countryName } from './i18n.js';
 
 export const START_CASH = 1500;
 export const LAP_BONUS = 200;
@@ -815,6 +815,22 @@ export function transferContract(game, contractId, toPlayerId) {
   }
   contract.holderId = toPlayerId;
   return contract;
+}
+
+export function getContractDisplayName(game, contract) {
+  if (contract.type === CONTRACT_TYPES.VOTE_SUPPORT) {
+    const property = game.board.find((space) => space.id === contract.targetSpaceId);
+    const countryLabel = countryName(property) || t('ui.contractDetail.unknownProperty');
+    return t('contract.name.voteSupport', countryLabel);
+  }
+  const refs = contract.shareRefs ?? [];
+  const property = refs[0] ? game.board.find((space) => space.id === refs[0].spaceId) : null;
+  const propertyLabel = cityName(property) || t('ui.contractDetail.unknownProperty');
+  const percent = refs.length * SHARE_PERCENT;
+  if (contract.type === CONTRACT_TYPES.INHERITANCE) {
+    return t('contract.name.inheritance', propertyLabel, percent);
+  }
+  return t('contract.name.freePass', propertyLabel, percent);
 }
 
 export function buyBackContract(game, contractId, buyerId) {

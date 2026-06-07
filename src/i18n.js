@@ -40,7 +40,7 @@ export function t(key, ...args) {
 export function cityName(space) {
   if (!space) return '';
   if (space.type === 'start') return t('space.start');
-  return currentLocale === 'en' ? (space.name || '') : (space.nameZh || space.name || '');
+  return currentLocale === 'en' ? (space.nameEn || space.name || '') : (space.name || space.nameZh || '');
 }
 
 export function countryName(space) {
@@ -213,9 +213,12 @@ const ZH = {
   'ui.offerShares': '给出股份',
   'ui.shareCount': '股数',
   'ui.requestShares': '索要股份',
-  'ui.offerContractId': '给出合同 ID',
-  'ui.requestContractId': '索要合同 ID',
-  'ui.contractIdPlaceholder': '例如 c1，可空',
+  'ui.offerContract': '给出合同',
+  'ui.requestContract': '索要合同',
+  'ui.contractSelectHint': '可多选；留空表示不附带合同',
+  'contract.name.freePass': '{0}{1}%免费通行权',
+  'contract.name.inheritance': '{0}{1}%继承权',
+  'contract.name.voteSupport': '{0}投票支持合同',
   'ui.note': '备注',
   'ui.optional': '可空',
   'ui.proposeTrade': '发起交易',
@@ -500,9 +503,12 @@ const EN = {
   'ui.offerShares': 'Offer Shares',
   'ui.shareCount': 'Shares',
   'ui.requestShares': 'Request Shares',
-  'ui.offerContractId': 'Offer Contract ID',
-  'ui.requestContractId': 'Request Contract ID',
-  'ui.contractIdPlaceholder': 'e.g. c1, optional',
+  'ui.offerContract': 'Offer Contract',
+  'ui.requestContract': 'Request Contract',
+  'ui.contractSelectHint': 'Multi-select; leave empty for no contract',
+  'contract.name.freePass': '{0} {1}% Free Pass',
+  'contract.name.inheritance': '{0} {1}% Inheritance',
+  'contract.name.voteSupport': '{0} Vote Support Contract',
   'ui.note': 'Note',
   'ui.optional': 'optional',
   'ui.proposeTrade': 'Propose Trade',

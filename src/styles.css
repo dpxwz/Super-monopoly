@@ -221,6 +221,22 @@ select {
   font-weight: 700;
 }
 
+.range-input-group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.range-input-group input[type='number'] {
+  width: 100%;
+}
+
+.range-input-group input[type='range'] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .setup-player-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -697,6 +713,7 @@ body.is-local-mode .chat-panel::after {
   border-radius: 16px;
   padding: 7px;
   background: rgba(255, 255, 255, 0.028);
+  box-shadow: inset 4px 0 0 0 color-mix(in srgb, var(--stripe, rgba(255, 255, 255, 0.12)) 72%, transparent);
 }
 
 .square:hover,
@@ -705,18 +722,12 @@ body.is-local-mode .chat-panel::after {
   z-index: 40;
 }
 
-.square::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--stripe, rgba(255, 255, 255, 0.12));
-  opacity: 0.72;
-}
-
 .square.is-current {
   border-color: rgba(113, 112, 255, 0.92);
-  box-shadow: 0 0 0 3px rgba(113, 112, 255, 0.16), inset 0 0 28px rgba(113, 112, 255, 0.12);
+  box-shadow:
+    0 0 0 3px rgba(113, 112, 255, 0.16),
+    inset 0 0 28px rgba(113, 112, 255, 0.12),
+    inset 4px 0 0 0 color-mix(in srgb, var(--stripe, rgba(255, 255, 255, 0.12)) 72%, transparent);
 }
 
 .square.is-owned {

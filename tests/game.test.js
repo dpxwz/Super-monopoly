@@ -25,6 +25,7 @@ import {
   createInheritanceContract,
   createVoteSupportContract,
   declareBankruptcy,
+  getContractDisplayName,
   declineCurrentShareOffer,
   demolishHouse,
   endTurn,
@@ -74,6 +75,10 @@ function propertySpaces(spaces = BOARD_SPACES) {
 
 function firstProperty(game) {
   return game.board.find((space) => space.type === 'property');
+}
+
+function propertyById(game, id) {
+  return game.board.find((space) => space.id === id);
 }
 
 function shares(property, start, count) {
@@ -262,6 +267,33 @@ test('rent is split per share: bank never collects, visitors do not pay themselv
   assert.equal(game.players[1].cash, 1500 + rent * 0.5);
   assert.equal(game.players[2].cash, 1500);
   assert.equal(game.pendingOffer.maxShareCount, 2);
+});
+
+test('contracts expose human-readable display names for the UI', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const madrid = propertyById(game, 'madrid');
+  const paris = propertyById(game, 'paris');
+  grantShares(game, madrid, 'p1', 0, 1);
+  grantShares(game, paris, 'p2', 0, 3);
+
+  const freePass = withTradeContractContext(game, () => createFreePassContract(game, {
+    holderId: 'p1',
+    shareRefs: shares(madrid, 0, 1),
+  }));
+  const inheritance = withTradeContractContext(game, () => createInheritanceContract(game, {
+    holderId: 'p1',
+    shareRefs: shares(madrid, 0, 4),
+  }));
+  const voteSupport = withTradeContractContext(game, () => createVoteSupportContract(game, {
+    holderId: 'p1',
+    obligorId: 'p2',
+    targetSpaceId: paris.id,
+    stance: 'yes',
+  }));
+
+  assert.equal(getContractDisplayName(game, freePass), '马德里10%免费通行权');
+  assert.equal(getContractDisplayName(game, inheritance), '马德里40%继承权');
+  assert.equal(getContractDisplayName(game, voteSupport), '法国投票支持合同');
 });
 
 test('free pass waives bound-share rent, follows share transfers, and buyback restores rent', () => {
