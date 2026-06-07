@@ -268,25 +268,20 @@
           <button class="icon-button" type="button" data-close-contract-overlay aria-label="关闭合同窗口">×</button>
         </div>
         <form id="contract-form" class="stacked-form">
+          <label>类型
+            <select id="contract-type">
+              <option value="freePass">免费通行权</option>
+              <option value="inheritance">继承权</option>
+              <option value="voteSupport">投票支持</option>
+            </select>
+          </label>
           <div class="form-row two-col">
-            <label>类型
-              <select id="contract-type">
-                <option value="freePass">免费通行权</option>
-                <option value="inheritance">继承权</option>
-                <option value="voteSupport">投票支持</option>
-              </select>
-            </label>
-            <label>合同持有人<select id="contract-holder"></select></label>
+            <label data-contract-field="common">目标地块<select id="contract-property"></select></label>
+            <label data-contract-field="shareBound">绑定股数<input id="contract-share-count" type="number" min="1" max="10" step="1" value="1" /></label>
           </div>
-          <div class="form-row two-col">
-            <label>目标地块<select id="contract-property"></select></label>
-            <label>绑定股数<input id="contract-share-count" type="number" min="1" max="10" step="1" value="1" /></label>
-          </div>
-          <div class="form-row two-col">
-            <label>股份当前持有人<select id="contract-share-owner"></select></label>
-            <label>投票义务人<select id="contract-obligor"></select></label>
-          </div>
-          <label>投票立场
+          <label data-contract-field="shareBound">股份持有人<select id="contract-share-owner"></select></label>
+          <label data-contract-field="voteSupport">投票义务人<select id="contract-obligor"></select></label>
+          <label data-contract-field="voteSupport">投票立场
             <select id="contract-stance">
               <option value="yes">支持</option>
               <option value="no">反对</option>

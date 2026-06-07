@@ -104,7 +104,6 @@ const elements = {
   pendingTrades: document.querySelector('#pending-trades'),
   contractForm: document.querySelector('#contract-form'),
   contractType: document.querySelector('#contract-type'),
-  contractHolder: document.querySelector('#contract-holder'),
   contractProperty: document.querySelector('#contract-property'),
   contractShareCount: document.querySelector('#contract-share-count'),
   contractShareOwner: document.querySelector('#contract-share-owner'),
@@ -497,7 +496,12 @@ function bindEvents() {
     });
   });
   elements.contractProperty.addEventListener('change', renderContractFormOptions);
-  elements.contractType.addEventListener('change', renderContractFormOptions);
+  elements.contractType.addEventListener('change', () => {
+    renderContractFormOptions();
+    updateContractFormVisibility();
+  });
+  elements.contractShareOwner.addEventListener('change', renderContractFormOptions);
+  elements.contractObligor.addEventListener('change', renderContractFormOptions);
 
   elements.chatForm?.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1407,17 +1411,46 @@ function renderContracts() {
   `).join('');
 }
 
-function renderContractFormOptions() {
+function getContractTradeParties() {
   const fromPlayerId = isLanMode() ? networkSession.playerId : (elements.tradeFrom?.value || getCurrentPlayer(game).id);
   const toPlayerId = elements.tradeTo?.value || game.players.find((player) => player.id !== fromPlayerId)?.id || fromPlayerId;
+  return { fromPlayerId, toPlayerId };
+}
+
+function resolveContractCounterparty(playerId, fromPlayerId, toPlayerId) {
+  if (playerId === fromPlayerId) return toPlayerId;
+  if (playerId === toPlayerId) return fromPlayerId;
+  return null;
+}
+
+function renderContractFormOptions() {
+  const { fromPlayerId, toPlayerId } = getContractTradeParties();
   renderContractFormOptionsForTrade(fromPlayerId, toPlayerId);
 }
 
 function renderContractFormOptionsForTrade(fromPlayerId, toPlayerId) {
-  populatePlayerSelect(elements.contractHolder, elements.contractHolder.value || toPlayerId);
-  populatePlayerSelect(elements.contractShareOwner, elements.contractShareOwner.value || fromPlayerId);
-  populatePlayerSelect(elements.contractObligor, elements.contractObligor.value || toPlayerId);
-  populatePropertySelect(elements.contractProperty, elements.contractProperty.value);
+  populateTradePartySelect(elements.contractShareOwner, fromPlayerId, toPlayerId, elements.contractShareOwner.value || fromPlayerId);
+  populateTradePartySelect(elements.contractObligor, fromPlayerId, toPlayerId, elements.contractObligor.value || toPlayerId);
+  populateContractPropertySelect(
+    elements.contractProperty,
+    elements.contractType.value,
+    elements.contractShareOwner.value,
+    elements.contractObligor.value,
+    elements.contractProperty.value,
+  );
+  updateContractShareCountLimit();
+  updateContractFormVisibility();
+}
+
+function updateContractFormVisibility() {
+  const isVoteSupport = elements.contractType.value === CONTRACT_TYPES.VOTE_SUPPORT;
+  document.querySelectorAll('[data-contract-field]').forEach((field) => {
+    const mode = field.dataset.contractField;
+    const visible = mode === 'common'
+      || (mode === 'shareBound' && !isVoteSupport)
+      || (mode === 'voteSupport' && isVoteSupport);
+    field.hidden = !visible;
+  });
 }
 
 function appendTradeOfferContractId(contractId) {
@@ -1454,23 +1487,38 @@ function setMessage(message, isError = false) {
 
 function buildContractPayloadFromForm() {
   const type = elements.contractType.value;
-  const holderId = elements.contractHolder.value;
   const propertyId = elements.contractProperty.value;
+  const { fromPlayerId, toPlayerId } = getContractTradeParties();
   if (type === CONTRACT_TYPES.VOTE_SUPPORT) {
+    if (!propertyId) {
+      throw new Error('没有符合条件的目标地块可绑定合同。');
+    }
+    const obligorId = elements.contractObligor.value;
+    const holderId = resolveContractCounterparty(obligorId, fromPlayerId, toPlayerId);
+    if (!holderId) {
+      throw new Error('投票义务人必须是本次交易的参与方。');
+    }
     return {
       type,
       holderId,
-      obligorId: elements.contractObligor.value,
+      obligorId,
       targetSpaceId: propertyId,
       stance: elements.contractStance.value,
     };
   }
 
+  if (!propertyId) {
+    throw new Error('没有符合条件的目标地块可绑定合同。');
+  }
   const ownerId = elements.contractShareOwner.value;
+  const holderId = resolveContractCounterparty(ownerId, fromPlayerId, toPlayerId);
+  if (!holderId) {
+    throw new Error('股份持有人必须是本次交易的参与方。');
+  }
   const count = Number(elements.contractShareCount.value || 1);
-  const shareRefs = firstShareRefs(ownerId, propertyId, count);
+  const shareRefs = firstEligibleShareRefs(ownerId, propertyId, elements.contractType.value, count);
   if (shareRefs.length < count) {
-    throw new Error('该股份持有人没有足够股份可绑定合同。');
+    throw new Error('该股份持有人没有足够可绑定股份。');
   }
   return {
     type,
@@ -1516,6 +1564,14 @@ function firstShareRefs(playerId, propertyId, count) {
     .map((share) => ({ spaceId: property.id, shareId: share.id }));
 }
 
+function firstEligibleShareRefs(playerId, propertyId, contractType, count) {
+  if (!propertyId || count <= 0) return [];
+  const property = game.board.find((space) => space.id === propertyId);
+  return eligibleSharesForContract(playerId, propertyId, contractType)
+    .slice(0, count)
+    .map((share) => ({ spaceId: property.id, shareId: share.id }));
+}
+
 function populatePlayerSelect(select, selectedValue) {
   const value = selectedValue && game.players.some((player) => player.id === selectedValue)
     ? selectedValue
@@ -1526,15 +1582,86 @@ function populatePlayerSelect(select, selectedValue) {
   select.value = value;
 }
 
-function populatePropertySelect(select, selectedValue) {
-  const properties = game.board.filter((space) => space.type === 'property');
-  const value = selectedValue && properties.some((property) => property.id === selectedValue)
-    ? selectedValue
-    : properties[0]?.id;
-  select.innerHTML = properties
-    .map((property) => `<option value="${property.id}">${escapeHtml(property.name)}</option>`)
+function populateTradePartySelect(select, fromPlayerId, toPlayerId, selectedValue) {
+  const parties = [fromPlayerId, toPlayerId].filter((playerId, index, list) => list.indexOf(playerId) === index);
+  if (parties.length === 0) {
+    select.innerHTML = '<option value="">无交易参与方</option>';
+    select.value = '';
+    return;
+  }
+  const value = selectedValue && parties.includes(selectedValue) ? selectedValue : parties[0];
+  select.innerHTML = parties
+    .map((playerId) => {
+      const player = game.players.find((candidate) => candidate.id === playerId);
+      return `<option value="${playerId}">${escapeHtml(player?.name ?? playerId)}</option>`;
+    })
     .join('');
   select.value = value;
+}
+
+function eligibleSharesForContract(playerId, propertyId, contractType) {
+  const property = game.board.find((space) => space.id === propertyId);
+  if (!property || property.type !== 'property') return [];
+  return property.shares.filter((share) => {
+    if (share.ownerId !== playerId) return false;
+    return !share.encumbranceContractIds.some((contractId) => {
+      const contract = game.contracts.find((candidate) => candidate.id === contractId);
+      return contract?.status === 'active' && contract.type === contractType;
+    });
+  });
+}
+
+function getEligibleContractProperties(contractType, shareOwnerId, obligorId) {
+  const properties = game.board.filter((space) => space.type === 'property');
+  if (contractType === CONTRACT_TYPES.VOTE_SUPPORT) {
+    return properties.filter((property) => getPlayerShareCount(game, property.id, obligorId) > 0);
+  }
+  return properties.filter((property) => eligibleSharesForContract(shareOwnerId, property.id, contractType).length > 0);
+}
+
+function populateContractPropertySelect(select, contractType, shareOwnerId, obligorId, selectedValue) {
+  const properties = getEligibleContractProperties(contractType, shareOwnerId, obligorId);
+  if (properties.length === 0) {
+    select.innerHTML = '<option value="">无可选地块</option>';
+    select.value = '';
+    return;
+  }
+  const value = selectedValue && properties.some((property) => property.id === selectedValue)
+    ? selectedValue
+    : properties[0].id;
+  select.innerHTML = properties
+    .map((property) => {
+      if (contractType === CONTRACT_TYPES.VOTE_SUPPORT) {
+        const shareCount = getPlayerShareCount(game, property.id, obligorId);
+        return `<option value="${property.id}">${escapeHtml(property.name)} · ${shareCount * SHARE_PERCENT}%</option>`;
+      }
+      const eligibleCount = eligibleSharesForContract(shareOwnerId, property.id, contractType).length;
+      return `<option value="${property.id}">${escapeHtml(property.name)} · 可绑定 ${eligibleCount} 股</option>`;
+    })
+    .join('');
+  select.value = value;
+}
+
+function updateContractShareCountLimit() {
+  if (!elements.contractShareCount) return;
+  if (elements.contractType.value === CONTRACT_TYPES.VOTE_SUPPORT) {
+    return;
+  }
+  const ownerId = elements.contractShareOwner.value;
+  const propertyId = elements.contractProperty.value;
+  const eligibleCount = propertyId
+    ? eligibleSharesForContract(ownerId, propertyId, elements.contractType.value).length
+    : 0;
+  const max = Math.max(eligibleCount, 1);
+  elements.contractShareCount.max = String(max);
+  const current = Number(elements.contractShareCount.value || 1);
+  if (eligibleCount === 0) {
+    elements.contractShareCount.value = '1';
+    return;
+  }
+  if (current < 1 || current > eligibleCount) {
+    elements.contractShareCount.value = String(Math.min(eligibleCount, Math.max(current, 1)));
+  }
 }
 
 function populateHoldingSelect(select, playerId) {
