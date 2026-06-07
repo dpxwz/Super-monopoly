@@ -180,6 +180,8 @@ test('LAN contract creation requires the acting player to bind only their own as
       obligorId: 'p1',
       targetSpaceId,
       stance: 'no',
+      tradeFromPlayerId: 'p2',
+      tradeToPlayerId: 'p1',
     },
   }), /权限|义务|自己|own|obligation/i);
 });

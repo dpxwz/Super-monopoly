@@ -87,6 +87,15 @@ function shareIds(property, start, count) {
   return property.shares.slice(start, start + count).map((share) => share.id);
 }
 
+function withTradeContractContext(game, fn, fromPlayerId = 'p1', toPlayerId = 'p2') {
+  game.contractCreationContext = { fromPlayerId, toPlayerId };
+  try {
+    return fn();
+  } finally {
+    game.contractCreationContext = null;
+  }
+}
+
 function grantShares(game, property, playerId, start, count) {
   transferShares(game, BANK_ID, playerId, shares(property, start, count));
 }
@@ -261,7 +270,7 @@ test('free pass waives bound-share rent, follows share transfers, and buyback re
   grantShares(game, property, 'p1', 0, 5);
   grantShares(game, property, 'p2', 5, 5);
   const coveredShares = shares(property, 0, 5);
-  const contract = createFreePassContract(game, { holderId: 'p3', shareRefs: coveredShares });
+  const contract = withTradeContractContext(game, () => createFreePassContract(game, { holderId: 'p3', shareRefs: coveredShares }), 'p1', 'p3');
 
   assert.equal(contract.type, CONTRACT_TYPES.FREE_PASS);
   assert.equal(property.shares[0].encumbranceContractIds.includes(contract.id), true);
@@ -291,7 +300,7 @@ test('inheritance-bound shares cannot be traded and transfer directly to holder 
   const inheritedRefs = shares(property, 0, 4);
   const inheritedIds = shareIds(property, 0, 4);
   const unboundShareId = property.shares[4].id;
-  const contract = createInheritanceContract(game, { holderId: 'p2', shareRefs: inheritedRefs });
+  const contract = withTradeContractContext(game, () => createInheritanceContract(game, { holderId: 'p2', shareRefs: inheritedRefs }));
 
   assert.equal(contract.type, CONTRACT_TYPES.INHERITANCE);
   assert.throws(() => transferShares(game, 'p1', 'p3', inheritedRefs), /继承权/);
@@ -313,7 +322,7 @@ test('trades can be proposed in any phase, rejected, expired, and only accepted 
   const game = createGame(['Ada', 'Lin', 'Grace']);
   const property = firstProperty(game);
   grantShares(game, property, 'p1', 0, 3);
-  const freePass = createFreePassContract(game, { holderId: 'p1', shareRefs: shares(property, 0, 1) });
+  const freePass = withTradeContractContext(game, () => createFreePassContract(game, { holderId: 'p1', shareRefs: shares(property, 0, 1) }));
   game.phase = 'buildPayment';
 
   const rejected = proposeTrade(game, {
@@ -636,12 +645,12 @@ test('a color-group major shareholder below 50% can start a build vote; vote sup
   for (const property of group.slice(1)) {
     grantShares(game, property, 'p1', 0, 3);
   }
-  const support = createVoteSupportContract(game, {
+  const support = withTradeContractContext(game, () => createVoteSupportContract(game, {
     holderId: 'p1',
     obligorId: 'p2',
     targetSpaceId: target.id,
     stance: 'yes',
-  });
+  }));
 
   assert.deepEqual(getBuildEligibility(game, target.id, 'p1'), {
     canDirectBuild: false,
@@ -681,12 +690,12 @@ test('vote support contracts force matching votes even when the obligor does not
   for (const property of group.slice(1)) {
     grantShares(game, property, 'p1', 0, 3);
   }
-  const support = createVoteSupportContract(game, {
+  const support = withTradeContractContext(game, () => createVoteSupportContract(game, {
     holderId: 'p1',
     obligorId: 'p2',
     targetSpaceId: target.id,
     stance: 'yes',
-  });
+  }));
 
   const vote = startBuildVote(game, target.id);
   castBuildVote(game, vote.id, 'p1', 'yes');
@@ -705,19 +714,19 @@ test('conflicting active vote support contracts for the same obligation are reje
   const property = firstProperty(game);
   grantShares(game, property, 'p2', 0, 3);
 
-  createVoteSupportContract(game, {
+  withTradeContractContext(game, () => createVoteSupportContract(game, {
     holderId: 'p1',
     obligorId: 'p2',
     targetSpaceId: property.id,
     stance: 'yes',
-  });
+  }));
 
-  assert.throws(() => createVoteSupportContract(game, {
+  assert.throws(() => withTradeContractContext(game, () => createVoteSupportContract(game, {
     holderId: 'p1',
     obligorId: 'p2',
     targetSpaceId: property.id,
     stance: 'no',
-  }), /冲突/);
+  })), /冲突/);
 });
 
 test('bankruptcy pauses for auction without returning sold shares to the bank', () => {
@@ -1008,10 +1017,21 @@ test('vote support contracts cannot be created after a matching vote has already
   }
   startBuildVote(game, target.id);
 
-  assert.throws(() => createVoteSupportContract(game, {
+  assert.throws(() => withTradeContractContext(game, () => createVoteSupportContract(game, {
     holderId: 'p1',
     obligorId: 'p2',
     targetSpaceId: target.id,
     stance: 'yes',
-  }), /投票|阶段|phase/i);
+  })), /投票|阶段|phase/i);
+});
+
+test('contracts can only be created during an active trade negotiation', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 1);
+
+  assert.throws(
+    () => createFreePassContract(game, { holderId: 'p2', shareRefs: shares(property, 0, 1) }),
+    /交易|trade/i,
+  );
 });

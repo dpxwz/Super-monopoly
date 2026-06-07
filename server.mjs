@@ -339,6 +339,20 @@ export function createLanServer({ rootDir = __dirname, store = createRoomStore()
 }
 
 function createContractFromPayload(game, payload, participant) {
+  const fromPlayerId = String(payload.tradeFromPlayerId ?? '');
+  const toPlayerId = String(payload.tradeToPlayerId ?? '');
+  if (!fromPlayerId || !toPlayerId) {
+    throw new Error('合同只能在交易过程中创建。');
+  }
+  game.contractCreationContext = { fromPlayerId, toPlayerId };
+  try {
+    return createContractFromPayloadWithContext(game, payload, participant);
+  } finally {
+    game.contractCreationContext = null;
+  }
+}
+
+function createContractFromPayloadWithContext(game, payload, participant) {
   const type = payload.type;
   if (type === CONTRACT_TYPES.FREE_PASS) {
     assertParticipantOwnsShareRefs(game, participant, payload.shareRefs ?? []);

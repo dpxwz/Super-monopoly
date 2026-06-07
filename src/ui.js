@@ -119,7 +119,7 @@ const elements = {
   chatLines: document.querySelector('#chat-lines'),
   chatStatus: document.querySelector('#chat-status'),
   openTradeButton: document.querySelector('[data-open-trade]'),
-  openContractButton: document.querySelector('[data-open-contract]'),
+  openTradeContractButton: document.querySelector('[data-open-trade-contract]'),
   rightPlayerName: document.querySelector('#right-player-name'),
   rightPlayerMode: document.querySelector('#right-player-mode'),
   rightPlayerCash: document.querySelector('#right-player-cash'),
@@ -471,11 +471,29 @@ function bindEvents() {
 
   elements.contractForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    if (elements.tradeOverlay?.hidden) {
+      setMessage(t('error.contractOnlyDuringTrade'), true);
+      return;
+    }
     safeAction(async () => {
-      const payload = buildContractPayloadFromForm();
-      await runGameAction(() => createContractFromPayload(payload), { type: 'createContract', payload });
+      const fromPlayerId = isLanMode() ? networkSession.playerId : elements.tradeFrom.value;
+      const toPlayerId = elements.tradeTo.value;
+      const payload = {
+        ...buildContractPayloadFromForm(),
+        tradeFromPlayerId: fromPlayerId,
+        tradeToPlayerId: toPlayerId,
+      };
+      game.contractCreationContext = { fromPlayerId, toPlayerId };
+      try {
+        await runGameAction(() => createContractFromPayload(payload), { type: 'createContract', payload });
+      } finally {
+        game.contractCreationContext = null;
+      }
       const contract = game.contracts.at(-1);
+      appendTradeOfferContractId(contract?.id);
       setMessage(t('msg.contractCreated', contract?.id ?? ''));
+      closeContractOverlay();
+      render();
     });
   });
   elements.contractProperty.addEventListener('change', renderContractFormOptions);
@@ -509,17 +527,24 @@ function bindEvents() {
       openOverlay(elements.tradeOverlay);
       return;
     }
-    if (event.target.closest('[data-open-contract]')) {
+    if (event.target.closest('[data-open-trade-contract]')) {
       if (isLanMode() && !isLanStarted()) {
         setMessage('联机游戏开始后才能创建合同。', true);
         return;
       }
-      renderContractFormOptions();
-      openOverlay(elements.contractOverlay);
+      openContractOverlayFromTrade();
+      return;
+    }
+    if (event.target.closest('[data-close-contract-overlay]')) {
+      closeContractOverlay();
       return;
     }
     if (event.target.closest('[data-close-overlay]')) {
-      closeOverlays();
+      closeTradeOverlay();
+      return;
+    }
+    if (event.target === elements.contractOverlay) {
+      closeContractOverlay();
       return;
     }
     if (event.target.classList?.contains('overlay')) {
@@ -529,7 +554,7 @@ function bindEvents() {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
-      closeOverlays();
+      closeTopOverlay();
     }
   });
 }
@@ -583,7 +608,7 @@ function renderInteractionLocks() {
   if (elements.lanStartButton) elements.lanStartButton.disabled = actionPending || (networkSession.room?.lobby?.players ?? []).length < 2;
   if (elements.lanLeaveButton) elements.lanLeaveButton.disabled = actionPending;
   if (elements.openTradeButton) elements.openTradeButton.disabled = actionPending || lobbyLocked;
-  if (elements.openContractButton) elements.openContractButton.disabled = actionPending || lobbyLocked;
+  if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = actionPending || lobbyLocked;
 }
 
 async function runGameAction(localAction, lanAction) {
@@ -938,7 +963,7 @@ function renderLobbyState() {
   elements.bankruptcyButton.disabled = true;
   elements.newGameButton.disabled = true;
   if (elements.openTradeButton) elements.openTradeButton.disabled = true;
-  if (elements.openContractButton) elements.openContractButton.disabled = true;
+  if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = true;
   elements.offerText.textContent = '';
   elements.sharePurchaseForm.hidden = true;
   elements.players.innerHTML = players.map((player, index) => `
@@ -1022,6 +1047,36 @@ function renderChatPanel() {
 
 function openOverlay(overlay) {
   if (overlay) overlay.hidden = false;
+}
+
+function openContractOverlayFromTrade() {
+  const fromPlayerId = isLanMode() ? networkSession.playerId : elements.tradeFrom.value;
+  const toPlayerId = elements.tradeTo.value;
+  renderContractFormOptionsForTrade(fromPlayerId, toPlayerId);
+  openOverlay(elements.contractOverlay);
+}
+
+function closeContractOverlay() {
+  if (elements.contractOverlay) elements.contractOverlay.hidden = true;
+}
+
+function closeTradeOverlay() {
+  closeContractOverlay();
+  if (elements.tradeOverlay) elements.tradeOverlay.hidden = true;
+}
+
+function closeTopOverlay() {
+  if (elements.contractOverlay && !elements.contractOverlay.hidden) {
+    closeContractOverlay();
+    return;
+  }
+  if (elements.playerDetailOverlay && !elements.playerDetailOverlay.hidden) {
+    elements.playerDetailOverlay.hidden = true;
+    return;
+  }
+  if (elements.tradeOverlay && !elements.tradeOverlay.hidden) {
+    closeTradeOverlay();
+  }
 }
 
 function closeOverlays() {
@@ -1337,7 +1392,7 @@ function renderContracts() {
   const focusPlayer = getFocusedPlayer();
   const contracts = game.contracts.filter((contract) => contract.holderId === focusPlayer.id);
   if (contracts.length === 0) {
-    elements.contracts.innerHTML = `<p class="empty-state">${escapeHtml(focusPlayer.name)} 还没有合同。可点击“创建合同”，或在交易 overlay 中转让合同 ID。</p>`;
+    elements.contracts.innerHTML = `<p class="empty-state">${escapeHtml(focusPlayer.name)} ${t('ui.noContracts')}</p>`;
     return;
   }
   elements.contracts.innerHTML = contracts.map((contract) => `
@@ -1353,10 +1408,28 @@ function renderContracts() {
 }
 
 function renderContractFormOptions() {
-  populatePlayerSelect(elements.contractHolder, elements.contractHolder.value || getCurrentPlayer(game).id);
-  populatePlayerSelect(elements.contractShareOwner, elements.contractShareOwner.value || getCurrentPlayer(game).id);
-  populatePlayerSelect(elements.contractObligor, elements.contractObligor.value || game.players.find((player) => player.id !== getCurrentPlayer(game).id)?.id || getCurrentPlayer(game).id);
+  const fromPlayerId = isLanMode() ? networkSession.playerId : (elements.tradeFrom?.value || getCurrentPlayer(game).id);
+  const toPlayerId = elements.tradeTo?.value || game.players.find((player) => player.id !== fromPlayerId)?.id || fromPlayerId;
+  renderContractFormOptionsForTrade(fromPlayerId, toPlayerId);
+}
+
+function renderContractFormOptionsForTrade(fromPlayerId, toPlayerId) {
+  populatePlayerSelect(elements.contractHolder, elements.contractHolder.value || toPlayerId);
+  populatePlayerSelect(elements.contractShareOwner, elements.contractShareOwner.value || fromPlayerId);
+  populatePlayerSelect(elements.contractObligor, elements.contractObligor.value || toPlayerId);
   populatePropertySelect(elements.contractProperty, elements.contractProperty.value);
+}
+
+function appendTradeOfferContractId(contractId) {
+  if (!contractId || !elements.tradeOfferContract) return;
+  const existing = elements.tradeOfferContract.value
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!existing.includes(contractId)) {
+    existing.push(contractId);
+    elements.tradeOfferContract.value = existing.join(', ');
+  }
 }
 
 function renderBankruptcyWarning() {

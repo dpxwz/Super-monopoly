@@ -205,7 +205,6 @@
           <section class="panel-section contract-summary-panel" aria-labelledby="contract-heading">
             <div class="section-heading">
               <h2 id="contract-heading">当前玩家合同</h2>
-              <button class="mini-button" type="button" data-open-contract>创建合同</button>
             </div>
             <div id="contracts" class="contract-list"></div>
           </section>
@@ -240,9 +239,10 @@
             <label>索要股份<select id="trade-request-property"></select></label>
             <label>股数<input id="trade-request-shares" type="number" min="0" step="1" value="0" /></label>
           </div>
-          <div class="form-row two-col">
+          <div class="form-row trade-contract-row">
             <label>给出合同 ID<input id="trade-offer-contract" placeholder="例如 c1，可空" /></label>
             <label>索要合同 ID<input id="trade-request-contract" placeholder="例如 c2，可空" /></label>
+            <button class="mini-button trade-contract-button" type="button" data-open-trade-contract>创建合同</button>
           </div>
           <label>备注<input id="trade-note" maxlength="80" placeholder="可空" /></label>
           <button type="submit">发起交易</button>
@@ -257,15 +257,15 @@
       </section>
     </div>
 
-    <div id="contract-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="contract-form-heading" hidden>
+    <div id="contract-overlay" class="overlay overlay-nested" role="dialog" aria-modal="true" aria-labelledby="contract-form-heading" hidden>
       <section class="overlay-card contract-overlay-card">
         <div class="overlay-heading">
           <div>
             <p class="eyebrow">contracts</p>
             <h2 id="contract-form-heading">创建合同</h2>
-            <p class="muted">合同创建保留为独立 overlay，右侧合同框只展示当前玩家持有合同。</p>
+            <p class="muted">合同只能在交易过程中创建。完成后会自动加入本次交易的给出合同列表。</p>
           </div>
-          <button class="icon-button" type="button" data-close-overlay aria-label="关闭合同窗口">×</button>
+          <button class="icon-button" type="button" data-close-contract-overlay aria-label="关闭合同窗口">×</button>
         </div>
         <form id="contract-form" class="stacked-form">
           <div class="form-row two-col">

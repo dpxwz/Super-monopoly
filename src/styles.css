@@ -902,6 +902,20 @@ body.is-local-mode .chat-panel::after {
   backdrop-filter: blur(16px);
 }
 
+.overlay-nested {
+  z-index: 50;
+}
+
+.trade-contract-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.trade-contract-button {
+  align-self: end;
+  min-height: 42px;
+}
+
 .overlay-card {
   width: min(880px, 100%);
   max-height: min(820px, 92vh);

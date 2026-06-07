@@ -259,6 +259,7 @@ export function createGame(playerNames) {
     pendingConstruction: null,
     pendingAuction: null,
     contracts: [],
+    contractCreationContext: null,
     lastDice: null,
     winnerId: null,
     nextTradeId: 1,
@@ -1591,6 +1592,11 @@ function assertContractCreationAllowed(game) {
   if (game.phase === 'vote' || game.pendingVote) {
     throw new Error(t('error.voteMustResolveFirst'));
   }
+  const context = game.contractCreationContext;
+  if (!context?.fromPlayerId || !context?.toPlayerId) {
+    throw new Error(t('error.contractOnlyDuringTrade'));
+  }
+  assertTradeAllowed(game, context.fromPlayerId, context.toPlayerId);
 }
 
 function assertTradeAllowed(game, fromPlayerId, toPlayerId) {
