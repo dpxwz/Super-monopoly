@@ -579,7 +579,7 @@ function canVoteFor(playerId) {
 
 function renderInteractionLocks() {
   const lobbyLocked = isLanMode() && !isLanStarted();
-  if (elements.setupSubmit) elements.setupSubmit.disabled = actionPending;
+  if (elements.setupSubmit) elements.setupSubmit.disabled = actionPending || isLanMode();
   if (elements.lanStartButton) elements.lanStartButton.disabled = actionPending || (networkSession.room?.lobby?.players ?? []).length < 2;
   if (elements.lanLeaveButton) elements.lanLeaveButton.disabled = actionPending;
   if (elements.openTradeButton) elements.openTradeButton.disabled = actionPending || lobbyLocked;
@@ -609,10 +609,33 @@ async function joinLanRoom(roomCode, playerName) {
   if (!roomCode) {
     throw new Error('请输入要加入的局域网房间号。');
   }
+  const normalizedCode = normalizeRoomCode(roomCode);
+  const knownClientId = (isLanMode() && networkSession.roomCode === normalizedCode
+    ? networkSession.clientId
+    : null)
+    ?? loadStoredLanSession(window.sessionStorage, normalizedCode)?.clientId
+    ?? null;
+
+  if (isLanMode() && networkSession.roomCode === normalizedCode && networkSession.clientId) {
+    await refreshLanServerInfo();
+    const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(normalizedCode)}/resume`, {
+      method: 'POST',
+      body: { clientId: networkSession.clientId },
+    });
+    applyLanSnapshot(snapshot);
+    rememberRoomInUrl();
+    startLanPolling();
+    setMessage(`你已在局域网房间 ${networkSession.roomCode} 中。`);
+    return;
+  }
+
   await refreshLanServerInfo();
-  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(normalizeRoomCode(roomCode))}/join`, {
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(normalizedCode)}/join`, {
     method: 'POST',
-    body: { playerName },
+    body: {
+      playerName,
+      ...(knownClientId ? { clientId: knownClientId } : {}),
+    },
   });
   applyLanSnapshot(snapshot);
   rememberRoomInUrl();

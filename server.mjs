@@ -64,11 +64,20 @@ export function createRoomStore({
     return withClient(room, host);
   }
 
-  function joinRoom(rawCode, { playerName } = {}) {
+  function joinRoom(rawCode, { playerName, clientId: existingClientId } = {}) {
     const room = requireRoom(rawCode);
     if (room.lobby.started) {
       throw new Error('游戏已经开始，不能再加入这个局域网房间。');
     }
+
+    const knownClientId = String(existingClientId ?? '').trim();
+    if (knownClientId) {
+      const existing = room.lobby.players.find((player) => player.clientId === knownClientId);
+      if (existing) {
+        return withClient(room, existing);
+      }
+    }
+
     if (room.lobby.players.length >= MAX_ROOM_PLAYERS) {
       throw new Error('局域网房间已满，最多 4 名玩家。');
     }

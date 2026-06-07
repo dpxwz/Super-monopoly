@@ -67,6 +67,22 @@ test('LAN room store creates a host lobby, accepts joins, and only the host can 
   assert.equal(started.room.revision, 3);
 });
 
+test('LAN room store resumes an existing client instead of creating duplicate lobby seats', () => {
+  const store = deterministicStore();
+  store.createRoom({ playerName: 'Ada' });
+  const firstJoin = store.joinRoom('ROOM1', { playerName: 'Lin' });
+  const secondJoin = store.joinRoom('ROOM1', {
+    playerName: 'Lin again',
+    clientId: firstJoin.client.clientId,
+  });
+
+  assert.equal(secondJoin.client.clientId, firstJoin.client.clientId);
+  assert.equal(secondJoin.client.playerId, 'p2');
+  assert.equal(secondJoin.client.name, 'Lin');
+  assert.deepEqual(secondJoin.room.lobby.players.map((player) => player.name), ['Ada', 'Lin']);
+  assert.equal(secondJoin.room.revision, firstJoin.room.revision);
+});
+
 test('LAN room store rejects extra players after four seats', () => {
   const clientIds = ['h', 'a', 'b', 'c', 'd'];
   let nextCode = 'FULL1';
