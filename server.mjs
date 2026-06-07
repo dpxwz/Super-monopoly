@@ -99,6 +99,34 @@ export function createRoomStore({
     return withClient(room, participant);
   }
 
+  function resumeRoom(rawCode, clientId) {
+    const room = requireRoom(rawCode);
+    const participant = requireClient(room, clientId);
+    return withClient(room, participant);
+  }
+
+  function leaveRoom(rawCode, clientId) {
+    const room = requireRoom(rawCode);
+    const participant = requireClient(room, clientId);
+    if (room.lobby.started) {
+      throw new Error('局域网游戏进行中，不能直接退出房间；请刷新后用原浏览器身份继续。');
+    }
+
+    room.lobby.players = room.lobby.players.filter((player) => player.clientId !== participant.clientId);
+    if (room.lobby.players.length === 0) {
+      rooms.delete(room.roomCode);
+      return {
+        roomCode: room.roomCode,
+        client: publicClient(participant),
+        room: null,
+      };
+    }
+
+    renumberLobbyPlayers(room);
+    bump(room);
+    return withClient(room, room.lobby.players[0]);
+  }
+
   function getState(rawCode, clientId = null) {
     const room = requireRoom(rawCode);
     const participant = clientId ? requireClient(room, clientId) : null;
@@ -262,6 +290,8 @@ export function createRoomStore({
     createRoom,
     joinRoom,
     startRoom,
+    resumeRoom,
+    leaveRoom,
     getState,
     addChatMessage,
     applyAction,
@@ -442,6 +472,20 @@ function makeParticipant(clientId, index, playerName, isHost) {
   };
 }
 
+function renumberLobbyPlayers(room) {
+  if (room.lobby.players.length === 0) return;
+  if (!room.lobby.players.some((player) => player.isHost)) {
+    room.lobby.players[0].isHost = true;
+  }
+  room.lobby.players.forEach((player, index) => {
+    player.playerId = `p${index + 1}`;
+    if (player.isHost) {
+      room.hostClientId = player.clientId;
+      room.lobby.hostPlayerId = player.playerId;
+    }
+  });
+}
+
 function normalizePlayerName(playerName, fallback) {
   const name = String(playerName ?? '').trim();
   return (name || fallback).slice(0, 14);
@@ -494,7 +538,7 @@ function matchApiRoute(pathname) {
   if (pathname === '/api/rooms') {
     return { name: 'rooms' };
   }
-  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|state|actions|chat))?$/);
+  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|state|actions|chat))?$/);
   if (!match) {
     return null;
   }
@@ -506,7 +550,7 @@ function matchApiRoute(pathname) {
 
 async function handleApiRoute({ request, response, route, store, url }) {
   if (route.name === 'health') {
-    sendJson(response, 200, { ok: true });
+    sendJson(response, 200, { ok: true, urls: lanUrls(request.socket.localPort) });
     return;
   }
 
@@ -525,6 +569,18 @@ async function handleApiRoute({ request, response, route, store, url }) {
   if (route.name === 'start' && request.method === 'POST') {
     const body = await readJsonBody(request);
     sendJson(response, 200, store.startRoom(route.roomCode, body.clientId));
+    return;
+  }
+
+  if (route.name === 'resume' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, store.resumeRoom(route.roomCode, body.clientId));
+    return;
+  }
+
+  if (route.name === 'leave' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, store.leaveRoom(route.roomCode, body.clientId));
     return;
   }
 
@@ -641,6 +697,14 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
   const host = process.env.HOST ?? '0.0.0.0';
   const server = createLanServer();
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Super Monopoly LAN server could not start: ${host}:${port} is already in use. Try PORT=${port + 1} npm run serve.`);
+    } else {
+      console.error(`Super Monopoly LAN server error: ${error.message}`);
+    }
+    process.exitCode = 1;
+  });
   server.listen(port, host, () => {
     console.log(`Super Monopoly LAN server listening on ${host}:${port}`);
     console.log('Open one of these URLs on LAN devices:');

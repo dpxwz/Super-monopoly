@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/game.js && node --check src/ui.js && node --check server.mjs",
+    "check": "node --check src/game.js && node --check src/i18n.js && node --check src/lan-client.js && node --check src/ui.js && node --check server.mjs",
     "serve": "node server.mjs"
   }
 }

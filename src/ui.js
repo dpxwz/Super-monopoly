@@ -38,12 +38,23 @@ import {
   startDemolishVote,
 } from './game.js';
 import { t, setLocale, getLocale, cityName, countryName, colorName, detectLocale } from './i18n.js';
+import {
+  applyLanSnapshotToSession,
+  clearStoredLanSession,
+  isLoopbackOrigin,
+  loadStoredLanSession,
+  normalizeRoomCode,
+  roomCodeFromLocation,
+  saveStoredLanSession,
+  shareUrlForRoom,
+} from './lan-client.js';
 
 const playerColors = ['var(--player-1)', 'var(--player-2)', 'var(--player-3)', 'var(--player-4)'];
 const bankColor = 'rgba(174, 184, 199, 0.48)';
 
 const elements = {
   setupForm: document.querySelector('#setup-form'),
+  setupSubmit: document.querySelector('#setup-form button[type="submit"]'),
   modeRadios: [...document.querySelectorAll('input[name="game-mode"]')],
   localPlayerFields: [...document.querySelectorAll('[data-local-player-field]')],
   lanOnlyFields: [...document.querySelectorAll('[data-lan-only]')],
@@ -107,6 +118,8 @@ const elements = {
   chatSend: document.querySelector('#chat-send'),
   chatLines: document.querySelector('#chat-lines'),
   chatStatus: document.querySelector('#chat-status'),
+  openTradeButton: document.querySelector('[data-open-trade]'),
+  openContractButton: document.querySelector('[data-open-contract]'),
   rightPlayerName: document.querySelector('#right-player-name'),
   rightPlayerMode: document.querySelector('#right-player-mode'),
   rightPlayerCash: document.querySelector('#right-player-cash'),
@@ -124,6 +137,8 @@ const elements = {
 };
 
 let game = createGame(['玩家 1', '玩家 2']);
+let lanServerUrls = [];
+let actionPending = false;
 let networkSession = {
   mode: 'local',
   roomCode: null,
@@ -199,9 +214,12 @@ function initLanguageSwitcher() {
   switcher.addEventListener('change', (e) => {
     setLocale(e.target.value);
     applyStaticTranslations();
-    // Re-create game with localized default names
-    const names = game.players.map((p) => p.name);
-    game = createGame(names);
+    // Re-create only local games. In LAN mode the server remains authoritative;
+    // polling/action snapshots will keep the translated UI on the same game state.
+    if (!isLanMode()) {
+      const names = game.players.map((p) => p.name);
+      game = createGame(names);
+    }
     render();
   });
 }
@@ -212,6 +230,10 @@ applyStaticTranslations();
 bindEvents();
 renderModeFields();
 render();
+refreshLanServerInfo()
+  .then(() => renderNetworkPanel())
+  .catch(() => {});
+resumeStoredLanSession();
 
 function bindEvents() {
   elements.modeRadios.forEach((radio) => radio.addEventListener('change', renderModeFields));
@@ -222,7 +244,7 @@ function bindEvents() {
       const formData = new FormData(elements.setupForm);
       const mode = String(formData.get('game-mode') ?? 'local');
       if (mode === 'local') {
-        leaveLanSession();
+        await leaveLanSession();
         const names = [...formData.getAll('player')]
           .map((name) => String(name).trim())
           .filter(Boolean);
@@ -249,9 +271,10 @@ function bindEvents() {
   });
 
   elements.lanLeaveButton?.addEventListener('click', () => {
-    leaveLanSession();
-    setMessage('已退出局域网联机，回到本地模式。');
-    render();
+    safeAction(async () => {
+      await leaveLanSession();
+      setMessage('已退出局域网联机，回到本地模式。');
+    });
   });
 
   elements.rollButton.addEventListener('click', () => {
@@ -478,11 +501,19 @@ function bindEvents() {
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('[data-open-trade]')) {
+      if (isLanMode() && !isLanStarted()) {
+        setMessage('联机游戏开始后才能发起交易。', true);
+        return;
+      }
       renderTradePanel();
       openOverlay(elements.tradeOverlay);
       return;
     }
     if (event.target.closest('[data-open-contract]')) {
+      if (isLanMode() && !isLanStarted()) {
+        setMessage('联机游戏开始后才能创建合同。', true);
+        return;
+      }
       renderContractFormOptions();
       openOverlay(elements.contractOverlay);
       return;
@@ -517,11 +548,15 @@ function buySelectedShares() {
 }
 
 async function safeAction(action) {
+  if (actionPending) return;
+  actionPending = true;
+  renderInteractionLocks();
   try {
     await action();
-    render();
   } catch (error) {
     setMessage(error.message, true);
+  } finally {
+    actionPending = false;
     render();
   }
 }
@@ -542,6 +577,15 @@ function canVoteFor(playerId) {
   return !isLanMode() || playerId === networkSession.playerId;
 }
 
+function renderInteractionLocks() {
+  const lobbyLocked = isLanMode() && !isLanStarted();
+  if (elements.setupSubmit) elements.setupSubmit.disabled = actionPending;
+  if (elements.lanStartButton) elements.lanStartButton.disabled = actionPending || (networkSession.room?.lobby?.players ?? []).length < 2;
+  if (elements.lanLeaveButton) elements.lanLeaveButton.disabled = actionPending;
+  if (elements.openTradeButton) elements.openTradeButton.disabled = actionPending || lobbyLocked;
+  if (elements.openContractButton) elements.openContractButton.disabled = actionPending || lobbyLocked;
+}
+
 async function runGameAction(localAction, lanAction) {
   if (isLanMode()) {
     return sendLanAction(lanAction.type, lanAction.payload ?? {});
@@ -550,11 +594,13 @@ async function runGameAction(localAction, lanAction) {
 }
 
 async function createLanRoom(playerName) {
+  await refreshLanServerInfo();
   const snapshot = await apiRequest('/api/rooms', {
     method: 'POST',
     body: { playerName },
   });
   applyLanSnapshot(snapshot);
+  rememberRoomInUrl();
   startLanPolling();
   setMessage(`已创建局域网房间 ${networkSession.roomCode}，等待其他玩家加入。`);
 }
@@ -563,11 +609,13 @@ async function joinLanRoom(roomCode, playerName) {
   if (!roomCode) {
     throw new Error('请输入要加入的局域网房间号。');
   }
-  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(roomCode)}/join`, {
+  await refreshLanServerInfo();
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(normalizeRoomCode(roomCode))}/join`, {
     method: 'POST',
     body: { playerName },
   });
   applyLanSnapshot(snapshot);
+  rememberRoomInUrl();
   startLanPolling();
   setMessage(`已加入局域网房间 ${networkSession.roomCode}，等待房主开始。`);
 }
@@ -576,7 +624,7 @@ async function startLanGame() {
   if (!networkSession.roomCode || !networkSession.clientId) {
     throw new Error('还没有加入局域网房间。');
   }
-  const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/start`, {
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/start`, {
     method: 'POST',
     body: { clientId: networkSession.clientId },
   });
@@ -587,7 +635,7 @@ async function sendLanAction(type, payload = {}) {
   if (!networkSession.roomCode || !networkSession.clientId) {
     throw new Error('还没有加入局域网房间。');
   }
-  const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/actions`, {
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/actions`, {
     method: 'POST',
     body: { clientId: networkSession.clientId, action: { type, payload } },
   });
@@ -599,7 +647,7 @@ async function sendLanChat(text) {
   if (!isLanMode() || !networkSession.roomCode || !networkSession.clientId) {
     throw new Error('聊天室仅在局域网联机模式下启用。');
   }
-  const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/chat`, {
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/chat`, {
     method: 'POST',
     body: { clientId: networkSession.clientId, text },
   });
@@ -608,11 +656,11 @@ async function sendLanChat(text) {
 }
 
 async function pollLanState() {
-  if (!networkSession.roomCode || !networkSession.clientId) {
+  if (actionPending || !networkSession.roomCode || !networkSession.clientId) {
     return;
   }
   try {
-    const snapshot = await apiRequest(`/api/rooms/${networkSession.roomCode}/state?clientId=${encodeURIComponent(networkSession.clientId)}`);
+    const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/state?clientId=${encodeURIComponent(networkSession.clientId)}`);
     const previousRevision = networkSession.room?.revision;
     applyLanSnapshot(snapshot);
     if (networkSession.room?.revision !== previousRevision) {
@@ -638,8 +686,25 @@ function stopLanPolling() {
   networkSession.pollTimer = null;
 }
 
-function leaveLanSession() {
+async function leaveLanSession() {
+  const shouldNotifyServer = isLanMode()
+    && networkSession.roomCode
+    && networkSession.clientId
+    && networkSession.room?.lobby?.started !== true;
+  const roomCode = networkSession.roomCode;
+  const clientId = networkSession.clientId;
   stopLanPolling();
+  if (shouldNotifyServer) {
+    try {
+      await apiRequest(`/api/rooms/${encodeURIComponent(roomCode)}/leave`, {
+        method: 'POST',
+        body: { clientId },
+      });
+    } catch (error) {
+      console.warn('Unable to notify LAN server about leaving room:', error);
+    }
+  }
+  clearStoredLanSession(window.sessionStorage);
   networkSession = {
     mode: 'local',
     roomCode: null,
@@ -649,6 +714,7 @@ function leaveLanSession() {
     room: null,
     pollTimer: null,
   };
+  removeRoomFromUrl();
   elements.modeRadios.forEach((radio) => {
     radio.checked = radio.value === 'local';
   });
@@ -656,19 +722,57 @@ function leaveLanSession() {
 }
 
 function applyLanSnapshot(snapshot) {
-  const client = snapshot.client ?? networkSession;
-  networkSession = {
-    ...networkSession,
-    mode: 'lan',
-    roomCode: snapshot.roomCode ?? snapshot.room?.roomCode ?? networkSession.roomCode,
-    clientId: client.clientId ?? networkSession.clientId,
-    playerId: client.playerId ?? networkSession.playerId,
-    isHost: client.isHost ?? networkSession.isHost,
-    room: snapshot.room ?? networkSession.room,
-  };
-  if (networkSession.room?.game) {
-    game = networkSession.room.game;
+  const result = applyLanSnapshotToSession(networkSession, snapshot);
+  if (!result.applied) return false;
+  networkSession = result.session;
+  if (result.game) {
+    game = result.game;
   }
+  saveStoredLanSession(window.sessionStorage, networkSession);
+  return true;
+}
+
+async function refreshLanServerInfo() {
+  const health = await apiRequest('/api/health');
+  lanServerUrls = Array.isArray(health.urls) ? health.urls : [];
+  return lanServerUrls;
+}
+
+async function resumeStoredLanSession() {
+  const roomCodeInUrl = roomCodeFromLocation(window.location);
+  const stored = loadStoredLanSession(window.sessionStorage, roomCodeInUrl || null);
+  if (!stored) return;
+  try {
+    await refreshLanServerInfo();
+    const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(stored.roomCode)}/resume`, {
+      method: 'POST',
+      body: { clientId: stored.clientId },
+    });
+    applyLanSnapshot(snapshot);
+    rememberRoomInUrl();
+    startLanPolling();
+    setMessage(`已恢复局域网房间 ${networkSession.roomCode}。`);
+    render();
+  } catch (error) {
+    clearStoredLanSession(window.sessionStorage);
+    setMessage(`无法恢复上次联机身份：${error.message}`, true);
+    renderNetworkPanel();
+  }
+}
+
+function rememberRoomInUrl() {
+  if (!networkSession.roomCode) return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('room') === networkSession.roomCode) return;
+  url.searchParams.set('room', networkSession.roomCode);
+  window.history.replaceState(null, '', url);
+}
+
+function removeRoomFromUrl() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('room')) return;
+  url.searchParams.delete('room');
+  window.history.replaceState(null, '', url);
 }
 
 async function apiRequest(path, { method = 'GET', body } = {}) {
@@ -685,11 +789,11 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
 }
 
 function applyRoomCodeFromUrl() {
-  const code = new URLSearchParams(window.location.search).get('room');
+  const code = roomCodeFromLocation(window.location);
   if (!code) return;
   const joinRadio = elements.modeRadios.find((radio) => radio.value === 'lan-join');
   if (joinRadio) joinRadio.checked = true;
-  if (elements.roomCode) elements.roomCode.value = code.toUpperCase();
+  if (elements.roomCode) elements.roomCode.value = code;
 }
 
 function renderModeFields() {
@@ -722,7 +826,13 @@ function renderNetworkPanel() {
 
   const room = networkSession.room;
   const players = room?.lobby?.players ?? [];
-  const shareUrl = networkSession.roomCode ? `${window.location.origin}${window.location.pathname}?room=${networkSession.roomCode}` : '';
+  const shareUrl = shareUrlForRoom({
+    origin: window.location.origin,
+    pathname: window.location.pathname,
+    roomCode: networkSession.roomCode,
+    serverUrls: lanServerUrls,
+  });
+  const shareUrlIsLoopback = shareUrl ? isLoopbackOrigin(shareUrl) : false;
   elements.networkPanel.hidden = false;
   elements.networkRoomCode.textContent = networkSession.roomCode ?? '--';
   elements.networkShareUrl.value = shareUrl;
@@ -730,13 +840,17 @@ function renderNetworkPanel() {
     .map((player) => `<span class="badge">${escapeHtml(player.name)}${player.playerId === networkSession.playerId ? '（你）' : ''}${player.isHost ? ' · 房主' : ''}</span>`)
     .join('');
   elements.networkHint.textContent = room?.lobby?.started
-    ? `联机游戏进行中。你控制 ${networkPlayerName(networkSession.playerId)}。`
-    : `已加入 ${players.length}/${MAX_PLAYERS_FOR_UI} 人。把链接发给同一局域网内的玩家；如果链接里是 127.0.0.1，请改用终端里 npm run serve 打印的局域网地址。`;
+    ? `联机游戏进行中。你控制 ${networkPlayerName(networkSession.playerId)}。刷新本页会自动恢复同一玩家身份。`
+    : shareUrlIsLoopback
+      ? `已加入 ${players.length}/${MAX_PLAYERS_FOR_UI} 人。当前链接仍是本机地址，其他设备需要使用 npm run serve 终端打印的局域网地址。`
+      : `已加入 ${players.length}/${MAX_PLAYERS_FOR_UI} 人。复制上面的局域网链接给同一网络内的玩家；刷新本页会自动恢复房间身份。`;
   elements.networkStatus.textContent = room?.lobby?.started
     ? `局域网 ${networkSession.roomCode} · 你是 ${networkPlayerName(networkSession.playerId)}`
     : `局域网大厅 ${networkSession.roomCode}`;
   elements.lanStartButton.hidden = !networkSession.isHost || room?.lobby?.started;
-  elements.lanStartButton.disabled = players.length < 2;
+  elements.lanStartButton.disabled = actionPending || players.length < 2;
+  elements.lanLeaveButton.disabled = actionPending;
+  renderInteractionLocks();
 }
 
 const MAX_PLAYERS_FOR_UI = 4;
@@ -800,6 +914,8 @@ function renderLobbyState() {
   elements.endButton.disabled = true;
   elements.bankruptcyButton.disabled = true;
   elements.newGameButton.disabled = true;
+  if (elements.openTradeButton) elements.openTradeButton.disabled = true;
+  if (elements.openContractButton) elements.openContractButton.disabled = true;
   elements.offerText.textContent = '';
   elements.sharePurchaseForm.hidden = true;
   elements.players.innerHTML = players.map((player, index) => `
@@ -963,12 +1079,13 @@ function renderControls() {
   const cashLocked = !currentPlayer.bankrupt && currentPlayer.cash <= 0;
   const networkLocked = isLanMode() && (!isLanStarted() || currentPlayer.id !== networkSession.playerId);
   const networkOfferLocked = isLanMode() && game.pendingOffer?.playerId !== networkSession.playerId;
-  elements.rollButton.disabled = game.phase !== 'roll' || game.status === 'gameOver' || cashLocked || networkLocked;
-  elements.buyButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused || cashLocked || networkLocked || networkOfferLocked;
-  elements.declineButton.disabled = !hasOffer || game.status === 'gameOver' || processPaused || networkLocked || networkOfferLocked;
-  elements.endButton.disabled = game.phase === 'roll' || hasOffer || game.status === 'gameOver' || processPaused || game.phase === 'vote' || cashLocked || networkLocked;
-  elements.bankruptcyButton.disabled = game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'vote' || currentPlayer.bankrupt || networkLocked;
-  elements.newGameButton.disabled = isLanMode() && (!networkSession.isHost || !isLanStarted());
+  elements.rollButton.disabled = actionPending || game.phase !== 'roll' || game.status === 'gameOver' || cashLocked || networkLocked;
+  elements.buyButton.disabled = actionPending || !hasOffer || game.status === 'gameOver' || processPaused || cashLocked || networkLocked || networkOfferLocked;
+  elements.declineButton.disabled = actionPending || !hasOffer || game.status === 'gameOver' || processPaused || networkLocked || networkOfferLocked;
+  elements.endButton.disabled = actionPending || game.phase === 'roll' || hasOffer || game.status === 'gameOver' || processPaused || game.phase === 'vote' || cashLocked || networkLocked;
+  elements.bankruptcyButton.disabled = actionPending || game.status === 'gameOver' || game.phase === 'auctionPending' || game.phase === 'vote' || currentPlayer.bankrupt || networkLocked;
+  elements.newGameButton.disabled = actionPending || (isLanMode() && (!networkSession.isHost || !isLanStarted()));
+  renderInteractionLocks();
 }
 
 function renderBoard() {

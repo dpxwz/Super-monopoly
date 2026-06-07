@@ -1,16 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createRoomStore } from '../server.mjs';
+import { createLanServer, createRoomStore } from '../server.mjs';
 
-function deterministicStore({ dice = [[1, 1], [1, 1], [1, 1]] } = {}) {
+function deterministicStore({ dice = [[1, 1], [1, 1], [1, 1]], codes = ['ROOM1'] } = {}) {
   const clientIds = ['client-host', 'client-guest', 'client-third', 'client-fourth', 'client-extra'];
   let diceIndex = 0;
   return createRoomStore({
-    createCode: () => 'ROOM1',
+    createCode: () => codes[0] ?? 'ROOM1',
     createClientId: () => clientIds.shift(),
     rollDice: () => dice[diceIndex++] ?? [1, 1],
   });
+}
+
+async function withHttpServer(store, run) {
+  const server = createLanServer({ store });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  try {
+    return await run(baseUrl);
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+}
+
+async function requestJson(baseUrl, path, { method = 'GET', body } = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error ?? `HTTP ${response.status}`);
+  }
+  return data;
 }
 
 test('LAN room store creates a host lobby, accepts joins, and only the host can start', () => {
@@ -235,4 +263,82 @@ test('LAN trade expiry also bumps revision when acceptTrade itself expires the t
   } finally {
     Date.now = realNow;
   }
+});
+
+test('LAN room store lets an existing browser resume after refresh even after start', () => {
+  const store = deterministicStore();
+  const host = store.createRoom({ playerName: 'Ada' }).client;
+  store.joinRoom('ROOM1', { playerName: 'Lin' });
+  store.startRoom('ROOM1', host.clientId);
+
+  assert.throws(() => store.joinRoom('ROOM1', { playerName: 'Ada again' }), /已经开始|started/i);
+
+  const resumed = store.resumeRoom('room1', host.clientId);
+  assert.equal(resumed.client.clientId, host.clientId);
+  assert.equal(resumed.client.playerId, 'p1');
+  assert.equal(resumed.room.lobby.started, true);
+  assert.equal(resumed.room.game.players.length, 2);
+});
+
+test('LAN room store leave removes lobby guests and frees seats before start', () => {
+  const store = deterministicStore();
+  const host = store.createRoom({ playerName: 'Ada' }).client;
+  const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
+
+  const left = store.leaveRoom('room1', guest.clientId);
+
+  assert.equal(left.room.lobby.players.length, 1);
+  assert.equal(left.room.lobby.players[0].playerId, 'p1');
+  assert.throws(() => store.startRoom('ROOM1', host.clientId), /至少需要 2|minimum|players/i);
+  const rejoined = store.joinRoom('ROOM1', { playerName: 'Grace' });
+  assert.equal(rejoined.client.playerId, 'p2');
+});
+
+test('LAN HTTP API exposes health URLs and supports create/join/start/resume/state/action/leave contract', async () => {
+  const store = deterministicStore({ dice: [[1, 1]] });
+
+  await withHttpServer(store, async (baseUrl) => {
+    const health = await requestJson(baseUrl, '/api/health');
+    assert.equal(health.ok, true);
+    assert.ok(health.urls.some((url) => url.startsWith(baseUrl)), 'health should expose the actual server URL');
+
+    const host = await requestJson(baseUrl, '/api/rooms', {
+      method: 'POST',
+      body: { playerName: 'Ada' },
+    });
+    const guest = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/join`, {
+      method: 'POST',
+      body: { playerName: 'Lin' },
+    });
+    assert.equal(guest.client.playerId, 'p2');
+
+    const started = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/start`, {
+      method: 'POST',
+      body: { clientId: host.client.clientId },
+    });
+    assert.equal(started.room.lobby.started, true);
+
+    const resumed = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/resume`, {
+      method: 'POST',
+      body: { clientId: host.client.clientId },
+    });
+    assert.equal(resumed.client.playerId, 'p1');
+
+    const state = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/state?clientId=${encodeURIComponent(guest.client.clientId)}`);
+    assert.equal(state.client.playerId, 'p2');
+
+    const rolled = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/actions`, {
+      method: 'POST',
+      body: { clientId: host.client.clientId, action: { type: 'roll', payload: { dice: [6, 6] } } },
+    });
+    assert.deepEqual(rolled.room.game.lastDice, [1, 1]);
+
+    await assert.rejects(
+      () => requestJson(baseUrl, `/api/rooms/${host.roomCode}/leave`, {
+        method: 'POST',
+        body: { clientId: guest.client.clientId },
+      }),
+      /进行中|started|cannot leave/i,
+    );
+  });
 });
