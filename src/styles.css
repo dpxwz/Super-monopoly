@@ -470,6 +470,43 @@ select {
   gap: 10px;
 }
 
+.property-panel .property-list,
+.contract-summary-panel .contract-list {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 6px;
+}
+
+.property-panel .property-list {
+  max-height: 400px;
+}
+
+.contract-summary-panel .contract-list {
+  max-height: 200px;
+}
+
+.property-panel .property-list::-webkit-scrollbar,
+.contract-summary-panel .contract-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.property-panel .property-list::-webkit-scrollbar-track,
+.contract-summary-panel .contract-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 999px;
+}
+
+.property-panel .property-list::-webkit-scrollbar-thumb,
+.contract-summary-panel .contract-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.property-panel .property-list::-webkit-scrollbar-thumb:hover,
+.contract-summary-panel .contract-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
 .player-card,
 .property-card,
 .vote-card,
