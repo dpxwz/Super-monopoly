@@ -5,6 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+try {
+  process.loadEnvFile();
+} catch {}
+
 import {
   CONTRACT_TYPES,
   acceptTrade,
@@ -725,6 +729,37 @@ function lanUrls(port) {
   return urls;
 }
 
+function startDdnsUpdater() {
+  const hostname = process.env.DYNU_HOSTNAME;
+  const password = process.env.DYNU_PASSWORD;
+  if (!hostname || !password) {
+    return;
+  }
+
+  console.log(`[DDNS] Dynu DDNS auto-updater started for ${hostname}`);
+
+  async function updateIp() {
+    try {
+      const url = `https://api.dynu.com/nic/update?hostname=${encodeURIComponent(hostname)}&password=${encodeURIComponent(password)}`;
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'SuperMonopolyDDNS/1.0' }
+      });
+      const text = await response.text();
+      const cleanText = text.trim();
+      if (cleanText.startsWith('good') || cleanText.startsWith('nochg')) {
+        console.log(`[DDNS] Dynamic IP update successful: ${cleanText}`);
+      } else {
+        console.warn(`[DDNS] Dynamic IP update returned unexpected status: ${cleanText}`);
+      }
+    } catch (error) {
+      console.error(`[DDNS] Failed to update dynamic IP: ${error.message}`);
+    }
+  }
+
+  updateIp();
+  setInterval(updateIp, 300000);
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
   const host = process.env.HOST ?? '0.0.0.0';
@@ -743,5 +778,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     for (const url of lanUrls(port)) {
       console.log(`  ${url}`);
     }
+    startDdnsUpdater();
   });
 }
