@@ -648,6 +648,8 @@ body.is-local-mode .chat-panel::after {
   gap: 8px;
   width: 100%;
   aspect-ratio: 1;
+  container-type: inline-size;
+  container-name: game-board;
 }
 
 .center-log-panel {
@@ -825,7 +827,8 @@ body.is-local-mode .chat-panel::after {
   z-index: 1;
   overflow: hidden;
   margin: 0;
-  font-size: clamp(0.58rem, 0.64vw, 0.78rem);
+  font-size: 0.72rem;
+  font-size: clamp(0.65rem, 3.6cqw, 0.82rem);
   font-weight: 850;
   line-height: 1.12;
   text-overflow: ellipsis;
@@ -837,7 +840,8 @@ body.is-local-mode .chat-panel::after {
   z-index: 1;
   margin: 0;
   color: var(--ink);
-  font-size: clamp(0.5rem, 0.56vw, 0.68rem);
+  font-size: 0.64rem;
+  font-size: clamp(0.58rem, 3.1cqw, 0.72rem);
   font-weight: 700;
   line-height: 1.15;
 }
@@ -925,7 +929,8 @@ body.is-local-mode .chat-panel::after {
   z-index: 1;
   margin: 0;
   color: var(--muted);
-  font-size: clamp(0.48rem, 0.54vw, 0.64rem);
+  font-size: 0.58rem;
+  font-size: clamp(0.52rem, 2.8cqw, 0.66rem);
   line-height: 1.2;
 }
 
@@ -1323,15 +1328,61 @@ body.is-auction-active .board-stage {
     min-height: 180px;
   }
 
+  .game-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .board-stage {
+    order: -1;
+  }
+
+  .left-rail {
+    grid-template-rows: auto;
+  }
+
+  .chat-lines {
+    min-height: 110px;
+  }
+
+  .board-card {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
   .board {
-    grid-template-columns: repeat(12, minmax(24px, 1fr));
-    grid-template-rows: repeat(12, minmax(28px, 1fr));
-    gap: 3px;
+    width: max(100%, 540px);
+    min-width: 540px;
+    grid-template-columns: repeat(12, minmax(40px, 1fr));
+    grid-template-rows: repeat(12, minmax(40px, 1fr));
+    gap: 4px;
   }
 
   .square {
-    border-radius: 8px;
-    padding: 5px;
+    border-radius: 10px;
+    padding: 6px;
+    gap: 2px;
+  }
+
+  .square-name {
+    font-size: clamp(0.72rem, 4.4cqw, 0.9rem);
+  }
+
+  .square-price {
+    font-size: clamp(0.64rem, 3.8cqw, 0.8rem);
+  }
+
+  .square-meta {
+    font-size: clamp(0.58rem, 3.2cqw, 0.72rem);
+  }
+
+  .token {
+    width: 15px;
+    height: 15px;
+    border-width: 1.5px;
+    font-size: 0.52rem;
   }
 
   .square-detail,
@@ -1345,6 +1396,11 @@ body.is-auction-active .board-stage {
     padding: 12px;
   }
 
+  .center-log-panel h2,
+  #current-player {
+    font-size: clamp(1.35rem, 5.5vw, 2.2rem);
+  }
+
   .turn-header {
     display: grid;
   }
@@ -1355,6 +1411,28 @@ body.is-auction-active .board-stage {
 
   .overlay {
     padding: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .board {
+    width: max(100%, 600px);
+    min-width: 600px;
+    grid-template-columns: repeat(12, minmax(44px, 1fr));
+    grid-template-rows: repeat(12, minmax(44px, 1fr));
+    gap: 5px;
+  }
+
+  .square {
+    padding: 7px;
+  }
+
+  .square-name {
+    font-size: clamp(0.78rem, 4.8cqw, 0.95rem);
+  }
+
+  .square-price {
+    font-size: clamp(0.68rem, 4.1cqw, 0.84rem);
   }
 }
 
