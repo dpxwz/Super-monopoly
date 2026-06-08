@@ -689,7 +689,12 @@ function bindEvents() {
       return;
     }
     if (event.target.closest('[data-close-overlay]')) {
-      closeTradeOverlay();
+      const overlay = event.target.closest('.overlay');
+      if (overlay === elements.playerDetailOverlay) {
+        elements.playerDetailOverlay.hidden = true;
+      } else {
+        closeTradeOverlay();
+      }
       return;
     }
     if (event.target === elements.contractOverlay) {
@@ -1627,27 +1632,18 @@ function renderBoard() {
 }
 
 function renderPlayers() {
-  elements.players.innerHTML = game.players.map((player, index) => {
-    const holdings = getPlayerPropertyHoldings(game, player.id);
-    const shareCount = holdings.reduce((sum, holding) => sum + holding.shareCount, 0);
-    const contractCount = game.contracts.filter((contract) => contract.holderId === player.id && contract.status === 'active').length;
-    const position = game.board[player.position].name;
+  const activePlayers = game.players
+    .map((player, index) => ({ player, index }))
+    .filter(({ player }) => !player.bankrupt);
+
+  elements.players.innerHTML = activePlayers.map(({ player, index }) => {
     const activeClass = index === game.turn && game.status !== 'gameOver' ? ' is-active' : '';
-    const bankruptClass = player.bankrupt ? ' is-bankrupt' : '';
 
     return `
-      <article class="player-card${activeClass}${bankruptClass}" data-player-id="${player.id}">
-        <div class="card-topline">
+      <article class="player-card${activeClass}" data-player-id="${player.id}">
+        <div class="card-topline" style="margin-bottom: 0;">
           <strong><span class="player-avatar" style="--dot: ${playerColors[index]}">${index + 1}</span>${escapeHtml(player.name)}</strong>
-          <span class="badge">${player.bankrupt ? t('ui.bankrupt') : index === game.turn ? t('ui.acting') : t('ui.waiting')}</span>
-        </div>
-        <div class="card-grid">
-          <span><b>$${formatMoney(player.cash)}</b>现金</span>
-          <span><b>${shareCount}</b>股份</span>
-          <span><b>${holdings.length}</b>持股地块</span>
-          <span><b>${contractCount}</b>合同</span>
-          <span><b>${escapeHtml(position)}</b>位置</span>
-          <span><b>${player.bankrupt ? t('ui.paused') : t('ui.available')}</b>状态</span>
+          <span class="badge" style="font-weight: 700; color: var(--ink);">$${formatMoney(player.cash)}</span>
         </div>
       </article>
     `;
