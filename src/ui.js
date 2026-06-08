@@ -171,6 +171,9 @@ const elements = {
 
 let game = createGame(['玩家 1', '玩家 2']);
 let gameScreenActive = false;
+let playerTokenPositions = {}; // playerId -> { current: number, target: number, animating: boolean }
+let lastGameInstance = null;
+let lastTurnState = { turn: 0, round: 1 };
 let lanServerUrls = [];
 let actionPending = false;
 let networkSession = {
@@ -408,6 +411,7 @@ function bindEvents() {
 
   elements.endButton.addEventListener('click', () => {
     safeAction(async () => {
+      skipAllAnimations();
       await runGameAction(() => endTurn(game), { type: 'endTurn' });
       setMessage(game.status === 'gameOver' ? t('msg.gameOver') : t('msg.turnTo', getCurrentPlayer(game).name));
     });
@@ -1270,11 +1274,25 @@ function render() {
   if (isLanMode() && !isLanStarted()) {
     renderLobbyState();
     renderChatPanel();
+    elements.board.querySelectorAll('.player-token-wrapper').forEach((el) => el.remove());
+    for (const key in playerTokenPositions) {
+      delete playerTokenPositions[key];
+    }
+    lastGameInstance = null;
     return;
   }
   if (!isLanMode()) {
     expirePendingTrades(game, Date.now());
   }
+
+  if (game.turn !== lastTurnState.turn || game.round !== lastTurnState.round) {
+    skipAllAnimations();
+    lastTurnState = {
+      turn: game.turn,
+      round: game.round
+    };
+  }
+
   const currentPlayer = getCurrentPlayer(game);
   const currentSpace = game.board[currentPlayer.position];
   const alivePlayers = game.players.filter((player) => !player.bankrupt);
@@ -1297,6 +1315,7 @@ function render() {
   renderOffer();
   renderControls();
   renderBoard();
+  ensurePlayerTokenWrappers();
   renderPlayers();
   renderProperties();
   renderVotes();
@@ -1583,20 +1602,24 @@ function renderBoard() {
     const square = document.createElement('article');
     const grid = gridPosition(index);
     const hasPlayerShares = space.type === 'property' && getPropertyShareholders(game, space.id).length > 0;
-    const tokens = game.players.filter((player) => player.position === index && !player.bankrupt);
 
     square.className = `square type-${space.type}`;
     if (hasPlayerShares) square.classList.add('is-owned');
-    if (currentPlayer.position === index) square.classList.add('is-current');
+    if (currentPlayer.position === index) {
+      square.classList.add('is-current');
+      const playerIndex = game.players.findIndex((p) => p.id === currentPlayer.id);
+      const color = playerColors[playerIndex] || 'var(--accent)';
+      square.style.setProperty('--current-player-color', color);
+    }
     square.style.gridColumn = String(grid.column);
     square.style.gridRow = String(grid.row);
     square.style.setProperty('--stripe', stripeFor(space));
+    square.dataset.index = index;
 
     const placement = squareDetailPlacement(grid);
     square.innerHTML = `
       ${squareCompactMarkup(space)}
       ${space.type === 'property' ? squareDetailMarkup(space, placement) : ''}
-      <div class="tokens">${tokens.map(tokenMarkup).join('')}</div>
     `;
 
     elements.board.append(square);
@@ -2662,4 +2685,163 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+// Player token grid-by-grid movement animation and management
+function ensurePlayerTokenWrappers() {
+  const boardEl = elements.board;
+  if (!boardEl) return;
+
+  if (game !== lastGameInstance) {
+    boardEl.querySelectorAll('.player-token-wrapper').forEach((el) => el.remove());
+    for (const key in playerTokenPositions) {
+      delete playerTokenPositions[key];
+    }
+    lastGameInstance = game;
+  }
+
+  game.players.forEach((player) => {
+    if (!playerTokenPositions[player.id]) {
+      playerTokenPositions[player.id] = {
+        current: player.position,
+        target: player.position,
+        animating: false
+      };
+    } else {
+      playerTokenPositions[player.id].target = player.position;
+    }
+  });
+
+  game.players.forEach((player, index) => {
+    let wrapper = document.getElementById(`player-token-wrapper-${player.id}`);
+    if (!wrapper) {
+      wrapper = document.createElement('div');
+      wrapper.id = `player-token-wrapper-${player.id}`;
+      wrapper.className = 'player-token-wrapper';
+      wrapper.innerHTML = `<span class="token" style="background: ${playerColors[index]}">${index + 1}</span>`;
+      boardEl.appendChild(wrapper);
+    }
+
+    const state = playerTokenPositions[player.id];
+    const grid = gridPosition(state.current);
+    wrapper.style.gridColumn = String(grid.column);
+    wrapper.style.gridRow = String(grid.row);
+    wrapper.hidden = player.bankrupt;
+  });
+
+  updateTokenOverlapOffsets();
+
+  // Start animations for any players that need it
+  game.players.forEach((player) => {
+    const state = playerTokenPositions[player.id];
+    if (state && state.current !== state.target && !state.animating && !player.bankrupt) {
+      animatePlayerToNextStep(player.id);
+    }
+  });
+}
+
+function updateTokenOverlapOffsets() {
+  const counts = {}; // index -> array of playerIds
+  for (const playerId in playerTokenPositions) {
+    const player = game.players.find(p => p.id === playerId);
+    if (player && player.bankrupt) continue;
+    const pos = playerTokenPositions[playerId].current;
+    counts[pos] ??= [];
+    counts[pos].push(playerId);
+  }
+
+  for (const pos in counts) {
+    const playerIds = counts[pos];
+    playerIds.sort();
+    playerIds.forEach((playerId, index) => {
+      const token = document.querySelector(`#player-token-wrapper-${playerId} .token`);
+      if (token) {
+        token.style.setProperty('--overlap-offset', `${index * 22}px`);
+      }
+    });
+  }
+}
+
+async function animatePlayerToNextStep(playerId) {
+  const state = playerTokenPositions[playerId];
+  if (!state || state.current === state.target || state.animating) {
+    return;
+  }
+
+  state.animating = true;
+
+  while (state.current !== state.target) {
+    if (!state.animating) {
+      break;
+    }
+
+    const prevPos = state.current;
+    const nextPos = (prevPos + 1) % game.board.length;
+    state.current = nextPos;
+
+    await moveTokenDomOneStep(playerId, prevPos, nextPos);
+  }
+
+  state.animating = false;
+  render();
+}
+
+function moveTokenDomOneStep(playerId, prevPos, nextPos) {
+  return new Promise((resolve) => {
+    const wrapper = document.getElementById(`player-token-wrapper-${playerId}`);
+    if (!wrapper) {
+      resolve();
+      return;
+    }
+
+    // 1. First: Get current screen rect
+    const rectA = wrapper.getBoundingClientRect();
+
+    // 2. Last: Move in DOM
+    const grid = gridPosition(nextPos);
+    wrapper.style.gridColumn = String(grid.column);
+    wrapper.style.gridRow = String(grid.row);
+
+    // Update the overlap offset for the new positions
+    updateTokenOverlapOffsets();
+
+    // Get the new rect after grid repositioning
+    const rectB = wrapper.getBoundingClientRect();
+
+    // 3. Invert: apply transform translation
+    const dx = rectA.left - rectB.left;
+    const dy = rectA.top - rectB.top;
+
+    wrapper.style.transition = 'none';
+    wrapper.style.transform = `translate(${dx}px, ${dy}px)`;
+
+    // Force a reflow
+    wrapper.offsetHeight;
+
+    // 4. Play: Transition to target offset (0, 0)
+    wrapper.style.transition = 'transform 300ms cubic-bezier(0.25, 1, 0.5, 1)';
+    wrapper.style.transform = 'translate(0px, 0px)';
+
+    setTimeout(() => {
+      resolve();
+    }, 300);
+  });
+}
+
+function skipAllAnimations() {
+  for (const playerId in playerTokenPositions) {
+    const state = playerTokenPositions[playerId];
+    state.current = state.target;
+    state.animating = false;
+
+    const wrapper = document.getElementById(`player-token-wrapper-${playerId}`);
+    if (wrapper) {
+      const grid = gridPosition(state.current);
+      wrapper.style.gridColumn = String(grid.column);
+      wrapper.style.gridRow = String(grid.row);
+      wrapper.style.transition = 'none';
+      wrapper.style.transform = 'translate(0px, 0px)';
+    }
+  }
+  updateTokenOverlapOffsets();
 }
