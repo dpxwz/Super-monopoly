@@ -1436,6 +1436,105 @@ body.is-auction-active .board-stage {
   }
 }
 
+/* 3D Dice Styling */
+.dice-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 24px;
+  perspective: 600px;
+  margin: 10px auto;
+  min-height: 72px;
+  width: 100%;
+  transition: opacity 0.3s ease;
+}
+
+.dice-container.waiting {
+  opacity: 0.35;
+}
+
+.die {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  transform-style: preserve-3d;
+  transition: transform 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.die.rolling {
+  transition: none !important;
+  animation: roll-spin 0.15s linear infinite;
+}
+
+@keyframes roll-spin {
+  0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+  100% { transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg); }
+}
+
+.die-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  background: rgba(15, 18, 28, 0.9);
+  box-shadow: inset 0 0 12px rgba(113, 112, 255, 0.25), 0 6px 14px rgba(0, 0, 0, 0.55);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  padding: 6px;
+  box-sizing: border-box;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.die-face .dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dice-color, var(--accent-strong));
+  box-shadow: 0 0 8px var(--dice-color, var(--accent-strong));
+  align-self: center;
+  justify-self: center;
+}
+
+/* Face positioning */
+.face-1 { transform: rotateY(0deg) translateZ(24px); }
+.face-6 { transform: rotateY(180deg) translateZ(24px); }
+.face-3 { transform: rotateY(90deg) translateZ(24px); }
+.face-4 { transform: rotateY(-90deg) translateZ(24px); }
+.face-2 { transform: rotateX(90deg) translateZ(24px); }
+.face-5 { transform: rotateX(-90deg) translateZ(24px); }
+
+/* Face dots placement */
+.face-1 .dot { grid-area: 2 / 2; }
+
+.face-2 .dot:nth-child(1) { grid-area: 1 / 1; }
+.face-2 .dot:nth-child(2) { grid-area: 3 / 3; }
+
+.face-3 .dot:nth-child(1) { grid-area: 1 / 1; }
+.face-3 .dot:nth-child(2) { grid-area: 2 / 2; }
+.face-3 .dot:nth-child(3) { grid-area: 3 / 3; }
+
+.face-4 .dot:nth-child(1) { grid-area: 1 / 1; }
+.face-4 .dot:nth-child(2) { grid-area: 1 / 3; }
+.face-4 .dot:nth-child(3) { grid-area: 3 / 1; }
+.face-4 .dot:nth-child(4) { grid-area: 3 / 3; }
+
+.face-5 .dot:nth-child(1) { grid-area: 1 / 1; }
+.face-5 .dot:nth-child(2) { grid-area: 1 / 3; }
+.face-5 .dot:nth-child(3) { grid-area: 2 / 2; }
+.face-5 .dot:nth-child(4) { grid-area: 3 / 1; }
+.face-5 .dot:nth-child(5) { grid-area: 3 / 3; }
+
+.face-6 .dot:nth-child(1) { grid-area: 1 / 1; }
+.face-6 .dot:nth-child(2) { grid-area: 1 / 3; }
+.face-6 .dot:nth-child(3) { grid-area: 2 / 1; }
+.face-6 .dot:nth-child(4) { grid-area: 2 / 3; }
+.face-6 .dot:nth-child(5) { grid-area: 3 / 1; }
+.face-6 .dot:nth-child(6) { grid-area: 3 / 3; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

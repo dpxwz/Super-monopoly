@@ -88,6 +88,9 @@ const elements = {
   roundLabel: document.querySelector('#round-label'),
   phaseLabel: document.querySelector('#phase-label'),
   diceLabel: document.querySelector('#dice-label'),
+  diceContainer: document.querySelector('#dice-container'),
+  die1: document.querySelector('#die-1'),
+  die2: document.querySelector('#die-2'),
   controls: document.querySelector('.controls'),
   rollButton: document.querySelector('#roll-button'),
   buyButton: document.querySelector('#buy-button'),
@@ -1169,6 +1172,92 @@ function renderNetworkPanel() {
   renderInteractionLocks();
 }
 
+
+let lastRollState = {
+  round: 0,
+  turn: 0,
+  phase: '',
+  dice: null
+};
+let isDiceAnimating = false;
+
+function setDieFace(dieEl, faceVal, zRotation) {
+  const targetTransforms = {
+    1: 'rotateX(0deg) rotateY(0deg)',
+    6: 'rotateX(0deg) rotateY(180deg)',
+    3: 'rotateX(0deg) rotateY(-90deg)',
+    4: 'rotateX(0deg) rotateY(90deg)',
+    2: 'rotateX(-90deg) rotateY(0deg)',
+    5: 'rotateX(90deg) rotateY(0deg)',
+  };
+  const transformStr = (targetTransforms[faceVal] || targetTransforms[1]) + ` rotateZ(${zRotation}deg)`;
+  dieEl.style.transform = transformStr;
+  dieEl.setAttribute('data-face', faceVal);
+}
+
+function renderDice() {
+  if (!elements.diceContainer || !elements.die1 || !elements.die2) return;
+
+  elements.diceContainer.hidden = false;
+
+  const currentPlayer = getCurrentPlayer(game);
+  const playerIndex = game.players.findIndex(p => p.id === currentPlayer.id);
+  const color = playerColors[playerIndex] || 'var(--accent-strong)';
+  elements.diceContainer.style.setProperty('--dice-color', color);
+
+  if (game.phase === 'roll') {
+    elements.diceContainer.classList.add('waiting');
+    if (!isDiceAnimating) {
+      setDieFace(elements.die1, 1, -8);
+      setDieFace(elements.die2, 1, 10);
+    }
+    return;
+  }
+
+  elements.diceContainer.classList.remove('waiting');
+
+  if (!game.lastDice) {
+    if (!isDiceAnimating) {
+      setDieFace(elements.die1, 1, -8);
+      setDieFace(elements.die2, 1, 10);
+    }
+    return;
+  }
+
+  const isNewRoll = (
+    game.round !== lastRollState.round ||
+    game.turn !== lastRollState.turn ||
+    lastRollState.phase === 'roll' ||
+    !lastRollState.dice ||
+    game.lastDice[0] !== lastRollState.dice[0] ||
+    game.lastDice[1] !== lastRollState.dice[1]
+  );
+
+  lastRollState = {
+    round: game.round,
+    turn: game.turn,
+    phase: game.phase,
+    dice: [...game.lastDice]
+  };
+
+  if (isNewRoll && !isDiceAnimating) {
+    isDiceAnimating = true;
+    elements.die1.classList.add('rolling');
+    elements.die2.classList.add('rolling');
+
+    setTimeout(() => {
+      elements.die1.classList.remove('rolling');
+      elements.die2.classList.remove('rolling');
+      setDieFace(elements.die1, game.lastDice[0], -8);
+      setDieFace(elements.die2, game.lastDice[1], 10);
+      isDiceAnimating = false;
+    }, 600);
+  } else if (!isDiceAnimating) {
+    setDieFace(elements.die1, game.lastDice[0], -8);
+    setDieFace(elements.die2, game.lastDice[1], 10);
+  }
+}
+
 const MAX_PLAYERS_FOR_UI = 4;
 
 function render() {
@@ -1198,8 +1287,12 @@ function render() {
     : `${currentSpace.name} · ${currentSpace.countryName} · ${currentSpace.colorName} · 租金 $${formatMoney(getSpaceRent(currentSpace))} · 现金 $${formatMoney(currentPlayer.cash)}`;
   elements.roundLabel.textContent = t('ui.round', game.round);
   elements.phaseLabel.textContent = phaseText(game.phase);
-  elements.diceLabel.textContent = t('ui.dice', game.lastDice ? game.lastDice.join(' + ') : '--');
+  if (elements.diceLabel) {
+    elements.diceLabel.textContent = t('ui.dice', game.lastDice ? game.lastDice.join(' + ') : '--');
+  }
   elements.aliveCount.textContent = t('ui.aliveCount', alivePlayers.length);
+
+  renderDice();
 
   renderOffer();
   renderControls();
@@ -1229,7 +1322,12 @@ function renderLobbyState() {
     : '选择创建或加入局域网房间。';
   elements.roundLabel.textContent = '等待开始';
   elements.phaseLabel.textContent = networkSession.isHost ? '房主可开始' : '等待房主';
-  elements.diceLabel.textContent = networkSession.playerId ? `你是 ${networkSession.playerId}` : '未加入';
+  if (elements.diceLabel) {
+    elements.diceLabel.textContent = networkSession.playerId ? `你是 ${networkSession.playerId}` : '未加入';
+  }
+  if (elements.diceContainer) {
+    elements.diceContainer.hidden = true;
+  }
   elements.aliveCount.textContent = `${players.length} 人已加入`;
   renderBoard();
   hideTurnControls();
