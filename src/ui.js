@@ -2693,9 +2693,16 @@ function ensurePlayerTokenWrappers() {
   if (!boardEl) return;
 
   if (game !== lastGameInstance) {
-    boardEl.querySelectorAll('.player-token-wrapper').forEach((el) => el.remove());
-    for (const key in playerTokenPositions) {
-      delete playerTokenPositions[key];
+    const isBrandNewGame = !game.lastDice && game.round === 1 && game.turn === 0 && game.phase === 'roll';
+    const trackedKeys = Object.keys(playerTokenPositions);
+    const gamePlayerIds = game.players.map(p => p.id);
+    const playersMismatch = trackedKeys.length !== gamePlayerIds.length || !gamePlayerIds.every(id => trackedKeys.includes(id));
+
+    if (isBrandNewGame || playersMismatch) {
+      boardEl.querySelectorAll('.player-token-wrapper').forEach((el) => el.remove());
+      for (const key in playerTokenPositions) {
+        delete playerTokenPositions[key];
+      }
     }
     lastGameInstance = game;
   }
