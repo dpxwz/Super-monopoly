@@ -312,6 +312,41 @@ test('LAN room store leave removes lobby guests and frees seats before start', (
   assert.equal(rejoined.client.playerId, 'p2');
 });
 
+test('LAN room store lets the host kick lobby guests before start', () => {
+  const store = deterministicStore();
+  const host = store.createRoom({ playerName: 'Ada' }).client;
+  const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
+  const third = store.joinRoom('ROOM1', { playerName: 'Grace' }).client;
+
+  const kicked = store.kickPlayer('ROOM1', host.clientId, { targetPlayerId: guest.playerId });
+
+  assert.deepEqual(kicked.room.lobby.players.map((player) => player.name), ['Ada', 'Grace']);
+  assert.equal(kicked.room.lobby.players[1].playerId, 'p2');
+  assert.equal(kicked.room.revision, 4);
+
+  assert.throws(
+    () => store.kickPlayer('ROOM1', third.clientId, { targetPlayerId: host.playerId }),
+    /房主|host/i,
+  );
+  assert.throws(
+    () => store.kickPlayer('ROOM1', host.clientId, { targetPlayerId: host.playerId }),
+    /不能踢出自己|yourself/i,
+  );
+  assert.throws(() => store.resumeRoom('ROOM1', guest.clientId), /不是该局域网房间的玩家|player/i);
+});
+
+test('LAN room store rejects kick after the game starts', () => {
+  const store = deterministicStore();
+  const host = store.createRoom({ playerName: 'Ada' }).client;
+  const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
+  store.startRoom('ROOM1', host.clientId);
+
+  assert.throws(
+    () => store.kickPlayer('ROOM1', host.clientId, { targetPlayerId: guest.playerId }),
+    /已经开始|started/i,
+  );
+});
+
 test('LAN HTTP API exposes health URLs and supports create/join/start/resume/state/action/leave contract', async () => {
   const store = deterministicStore({ dice: [[1, 1]] });
 
@@ -330,6 +365,22 @@ test('LAN HTTP API exposes health URLs and supports create/join/start/resume/sta
     });
     assert.equal(guest.client.playerId, 'p2');
 
+    const extraGuest = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/join`, {
+      method: 'POST',
+      body: { playerName: 'Grace' },
+    });
+    assert.equal(extraGuest.client.playerId, 'p3');
+
+    const afterKick = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/kick`, {
+      method: 'POST',
+      body: {
+        clientId: host.client.clientId,
+        targetPlayerId: guest.client.playerId,
+      },
+    });
+    assert.deepEqual(afterKick.room.lobby.players.map((player) => player.name), ['Ada', 'Grace']);
+    assert.equal(afterKick.room.lobby.players[1].playerId, 'p2');
+
     const started = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/start`, {
       method: 'POST',
       body: { clientId: host.client.clientId },
@@ -342,8 +393,13 @@ test('LAN HTTP API exposes health URLs and supports create/join/start/resume/sta
     });
     assert.equal(resumed.client.playerId, 'p1');
 
-    const state = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/state?clientId=${encodeURIComponent(guest.client.clientId)}`);
+    const state = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/state?clientId=${encodeURIComponent(extraGuest.client.clientId)}`);
     assert.equal(state.client.playerId, 'p2');
+
+    await assert.rejects(
+      () => requestJson(baseUrl, `/api/rooms/${host.roomCode}/state?clientId=${encodeURIComponent(guest.client.clientId)}`),
+      /不是该局域网房间的玩家|player/i,
+    );
 
     const rolled = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/actions`, {
       method: 'POST',
@@ -354,7 +410,7 @@ test('LAN HTTP API exposes health URLs and supports create/join/start/resume/sta
     await assert.rejects(
       () => requestJson(baseUrl, `/api/rooms/${host.roomCode}/leave`, {
         method: 'POST',
-        body: { clientId: guest.client.clientId },
+        body: { clientId: extraGuest.client.clientId },
       }),
       /进行中|started|cannot leave/i,
     );

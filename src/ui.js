@@ -324,6 +324,27 @@ function bindEvents() {
     });
   });
 
+  elements.networkPlayers?.addEventListener('click', (event) => {
+    const kickButton = event.target.closest('[data-kick-player]');
+    if (!kickButton) return;
+    event.preventDefault();
+    safeAction(async () => {
+      await kickLanPlayer(kickButton.dataset.kickPlayer);
+      setMessage(`已踢出 ${networkPlayerName(kickButton.dataset.kickPlayer)}。`);
+    });
+  });
+
+  elements.players.addEventListener('click', (event) => {
+    const kickButton = event.target.closest('[data-kick-player]');
+    if (!kickButton) return;
+    event.preventDefault();
+    event.stopPropagation();
+    safeAction(async () => {
+      await kickLanPlayer(kickButton.dataset.kickPlayer);
+      setMessage(`已踢出 ${networkPlayerName(kickButton.dataset.kickPlayer)}。`);
+    });
+  });
+
   elements.rollButton.addEventListener('click', () => {
     safeAction(async () => {
       await runGameAction(() => rollAndMove(game), { type: 'roll' });
@@ -869,6 +890,26 @@ async function sendLanChat(text) {
   return snapshot;
 }
 
+async function kickLanPlayer(targetPlayerId) {
+  if (!networkSession.roomCode || !networkSession.clientId) {
+    throw new Error('你还没有加入局域网房间。');
+  }
+  if (!networkSession.isHost) {
+    throw new Error('只有房主可以踢出玩家。');
+  }
+  if (networkSession.room?.lobby?.started) {
+    throw new Error('游戏已经开始，不能踢出玩家。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/kick`, {
+    method: 'POST',
+    body: {
+      clientId: networkSession.clientId,
+      targetPlayerId,
+    },
+  });
+  applyLanSnapshot(snapshot);
+}
+
 async function pollLanState() {
   if (actionPending || !networkSession.roomCode || !networkSession.clientId) {
     return;
@@ -883,6 +924,12 @@ async function pollLanState() {
       renderNetworkPanel();
     }
   } catch (error) {
+    if (isLanRemovedFromRoomError(error)) {
+      await leaveLanSession({ skipServerNotify: true });
+      setMessage('你已被房主移出房间。', true);
+      render();
+      return;
+    }
     setMessage(`联机同步失败：${error.message}`, true);
     renderNetworkPanel();
   }
@@ -900,8 +947,9 @@ function stopLanPolling() {
   networkSession.pollTimer = null;
 }
 
-async function leaveLanSession() {
-  const shouldNotifyServer = isLanMode()
+async function leaveLanSession({ skipServerNotify = false } = {}) {
+  const shouldNotifyServer = !skipServerNotify
+    && isLanMode()
     && networkSession.roomCode
     && networkSession.clientId
     && networkSession.room?.lobby?.started !== true;
@@ -1030,6 +1078,11 @@ function renderModeFields() {
   renderNetworkPanel();
 }
 
+function isLanRemovedFromRoomError(error) {
+  const message = String(error?.message ?? '');
+  return /不是该局域网房间的玩家|找不到局域网房间/i.test(message);
+}
+
 function renderNetworkPanel() {
   if (!elements.networkPanel || !elements.networkStatus) {
     return;
@@ -1053,7 +1106,21 @@ function renderNetworkPanel() {
   elements.networkRoomCode.textContent = networkSession.roomCode ?? '--';
   elements.networkShareUrl.value = shareUrl;
   elements.networkPlayers.innerHTML = players
-    .map((player) => `<span class="badge">${escapeHtml(player.name)}${player.playerId === networkSession.playerId ? '（你）' : ''}${player.isHost ? ' · 房主' : ''}</span>`)
+    .map((player) => {
+      const labels = [
+        escapeHtml(player.name),
+        player.playerId === networkSession.playerId ? '（你）' : '',
+        player.isHost ? ' · 房主' : '',
+      ].filter(Boolean).join('');
+      const canKick = networkSession.isHost
+        && !room?.lobby?.started
+        && !player.isHost
+        && player.playerId !== networkSession.playerId;
+      const kickButton = canKick
+        ? `<button type="button" class="lan-kick-button danger-button" data-kick-player="${escapeHtml(player.playerId)}" aria-label="踢出 ${escapeHtml(player.name)}">踢出</button>`
+        : '';
+      return `<span class="network-player-badge badge">${labels}${kickButton}</span>`;
+    })
     .join('');
   elements.networkHint.textContent = room?.lobby?.started
     ? `联机游戏进行中。你控制 ${networkPlayerName(networkSession.playerId)}。刷新本页会自动恢复同一玩家身份。`
@@ -1138,15 +1205,27 @@ function renderLobbyState() {
   if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = true;
   elements.offerText.textContent = '';
   elements.sharePurchaseForm.hidden = true;
-  elements.players.innerHTML = players.map((player, index) => `
+  elements.players.innerHTML = players.map((player, index) => {
+    const canKick = networkSession.isHost
+      && !networkSession.room?.lobby?.started
+      && !player.isHost
+      && player.playerId !== networkSession.playerId;
+    const kickButton = canKick
+      ? `<button type="button" class="lan-kick-button danger-button" data-kick-player="${escapeHtml(player.playerId)}" aria-label="踢出 ${escapeHtml(player.name)}">踢出</button>`
+      : '';
+    return `
     <article class="player-card${player.playerId === networkSession.playerId ? ' is-active' : ''}" data-player-id="${player.playerId}">
       <div class="card-topline">
         <strong><span class="player-avatar" style="--dot: ${playerColors[index]}">${index + 1}</span>${escapeHtml(player.name)}</strong>
-        <span class="badge">${player.isHost ? '房主' : '等待'}${player.playerId === networkSession.playerId ? ' · 你' : ''}</span>
+        <span class="card-topline-actions">
+          ${kickButton}
+          <span class="badge">${player.isHost ? '房主' : '等待'}${player.playerId === networkSession.playerId ? ' · 你' : ''}</span>
+        </span>
       </div>
       <p class="muted">${escapeHtml(player.playerId)}</p>
     </article>
-  `).join('') || '<p class="empty-state">还没有玩家加入。</p>';
+  `;
+  }).join('') || '<p class="empty-state">还没有玩家加入。</p>';
   elements.properties.innerHTML = '<p class="empty-state">联机游戏开始后会显示你的地产。</p>';
   elements.votes.innerHTML = '<p class="empty-state">联机游戏开始后会显示投票。</p>';
   elements.pendingTrades.innerHTML = '<p class="empty-state">联机游戏开始后可以交易。</p>';

@@ -378,6 +378,24 @@ select {
   gap: 6px;
 }
 
+.network-player-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lan-kick-button {
+  min-height: 24px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.68rem;
+}
+
+.card-topline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .game-layout {
   display: grid;
   grid-template-columns: 300px minmax(720px, 1fr) 340px;

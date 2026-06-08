@@ -127,7 +127,7 @@ export function createRoomStore({
       throw new Error('局域网游戏进行中，不能直接退出房间；请刷新后用原浏览器身份继续。');
     }
 
-    room.lobby.players = room.lobby.players.filter((player) => player.clientId !== participant.clientId);
+    removeLobbyParticipant(room, participant);
     if (room.lobby.players.length === 0) {
       rooms.delete(room.roomCode);
       return {
@@ -140,6 +140,30 @@ export function createRoomStore({
     renumberLobbyPlayers(room);
     bump(room);
     return withClient(room, room.lobby.players[0]);
+  }
+
+  function kickPlayer(rawCode, clientId, { targetClientId, targetPlayerId } = {}) {
+    const room = requireRoom(rawCode);
+    const host = requireClient(room, clientId);
+    if (!host.isHost) {
+      throw new Error('只有房主可以踢出玩家。');
+    }
+    if (room.lobby.started) {
+      throw new Error('游戏已经开始，不能踢出玩家。');
+    }
+
+    const target = findKickTarget(room, { targetClientId, targetPlayerId });
+    if (target.clientId === host.clientId) {
+      throw new Error('不能踢出自己。');
+    }
+    if (target.isHost) {
+      throw new Error('不能踢出房主。');
+    }
+
+    removeLobbyParticipant(room, target);
+    renumberLobbyPlayers(room);
+    bump(room);
+    return withClient(room, host);
   }
 
   function getState(rawCode, clientId = null) {
@@ -314,6 +338,7 @@ export function createRoomStore({
     startRoom,
     resumeRoom,
     leaveRoom,
+    kickPlayer,
     getState,
     addChatMessage,
     applyAction,
@@ -508,6 +533,25 @@ function makeParticipant(clientId, index, playerName, isHost) {
   };
 }
 
+function removeLobbyParticipant(room, participant) {
+  room.lobby.players = room.lobby.players.filter((player) => player.clientId !== participant.clientId);
+}
+
+function findKickTarget(room, { targetClientId, targetPlayerId } = {}) {
+  const clientId = String(targetClientId ?? '').trim();
+  const playerId = String(targetPlayerId ?? '').trim();
+  let target = null;
+  if (clientId) {
+    target = room.lobby.players.find((player) => player.clientId === clientId);
+  } else if (playerId) {
+    target = room.lobby.players.find((player) => player.playerId === playerId);
+  }
+  if (!target) {
+    throw new Error('找不到要踢出的玩家。');
+  }
+  return target;
+}
+
 function renumberLobbyPlayers(room) {
   if (room.lobby.players.length === 0) return;
   if (!room.lobby.players.some((player) => player.isHost)) {
@@ -574,7 +618,7 @@ function matchApiRoute(pathname) {
   if (pathname === '/api/rooms') {
     return { name: 'rooms' };
   }
-  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|state|actions|chat))?$/);
+  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|kick|state|actions|chat))?$/);
   if (!match) {
     return null;
   }
@@ -617,6 +661,15 @@ async function handleApiRoute({ request, response, route, store, url }) {
   if (route.name === 'leave' && request.method === 'POST') {
     const body = await readJsonBody(request);
     sendJson(response, 200, store.leaveRoom(route.roomCode, body.clientId));
+    return;
+  }
+
+  if (route.name === 'kick' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, store.kickPlayer(route.roomCode, body.clientId, {
+      targetClientId: body.targetClientId,
+      targetPlayerId: body.targetPlayerId,
+    }));
     return;
   }
 
