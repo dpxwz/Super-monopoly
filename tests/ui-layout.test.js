@@ -58,6 +58,10 @@ test('trade controls and player detail live in overlays instead of the home side
   assert.ok(tradeContractButtonIndex > tradeOverlayIndex, 'contract creation button should live inside the trade overlay');
 });
 
+test('right rail exposes a host-only return-to-lobby control during LAN play', () => {
+  expectMarkup('id="lan-return-lobby-button"', 'host return-to-lobby button');
+});
+
 test('right rail has separate current-player property and contract boxes plus LAN-only chat UI', () => {
   expectMarkup('id="right-player-name"', 'right rail focused player name');
   expectMarkup('id="right-player-mode"', 'right rail local/LAN mode hint');

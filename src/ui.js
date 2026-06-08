@@ -81,6 +81,7 @@ const elements = {
   networkStatus: document.querySelector('#network-status'),
   lanStartButton: document.querySelector('#lan-start-button'),
   lanLeaveButton: document.querySelector('#lan-leave-button'),
+  lanReturnLobbyButton: document.querySelector('#lan-return-lobby-button'),
   board: document.querySelector('#board'),
   currentPlayer: document.querySelector('#current-player'),
   currentSpace: document.querySelector('#current-space'),
@@ -321,6 +322,14 @@ function bindEvents() {
     safeAction(async () => {
       await leaveLanSession();
       setMessage('已退出局域网联机，回到本地模式。');
+    });
+  });
+
+  elements.lanReturnLobbyButton?.addEventListener('click', () => {
+    safeAction(async () => {
+      await returnLanToLobby();
+      exitGameScreen();
+      setMessage('已返回进入游戏界面，房间仍然保留。');
     });
   });
 
@@ -755,6 +764,10 @@ function exitGameScreen({ immediate = false } = {}) {
 function syncGameScreenFromSession({ immediate = false } = {}) {
   if (isLanStarted() && !gameScreenActive) {
     enterGameScreen({ immediate });
+    return;
+  }
+  if (isLanMode() && !isLanStarted() && gameScreenActive) {
+    exitGameScreen({ immediate });
   }
 }
 
@@ -794,6 +807,9 @@ function renderInteractionLocks() {
   if (elements.setupSubmit) elements.setupSubmit.disabled = actionPending || isLanMode();
   if (elements.lanStartButton) elements.lanStartButton.disabled = actionPending || (networkSession.room?.lobby?.players ?? []).length < 2;
   if (elements.lanLeaveButton) elements.lanLeaveButton.disabled = actionPending;
+  if (elements.lanReturnLobbyButton) {
+    elements.lanReturnLobbyButton.disabled = actionPending;
+  }
   if (elements.openTradeButton) elements.openTradeButton.disabled = tradeLocked;
   if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = tradeLocked;
 }
@@ -860,6 +876,20 @@ async function startLanGame() {
     throw new Error('还没有加入局域网房间。');
   }
   const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/start`, {
+    method: 'POST',
+    body: { clientId: networkSession.clientId },
+  });
+  applyLanSnapshot(snapshot);
+}
+
+async function returnLanToLobby() {
+  if (!networkSession.roomCode || !networkSession.clientId) {
+    throw new Error('还没有加入局域网房间。');
+  }
+  if (!networkSession.isHost) {
+    throw new Error('只有房主可以返回进入游戏界面。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/return-lobby`, {
     method: 'POST',
     body: { clientId: networkSession.clientId },
   });
@@ -990,6 +1020,9 @@ function applyLanSnapshot(snapshot) {
   networkSession = result.session;
   if (result.game) {
     game = result.game;
+  } else if (!networkSession.room?.lobby?.started) {
+    const names = networkSession.room?.lobby?.players?.map((player) => player.name) ?? [];
+    game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2']);
   }
   saveStoredLanSession(window.sessionStorage, networkSession);
   return true;
@@ -1423,6 +1456,9 @@ function renderControls() {
   }
 
   elements.bankruptcyButton.disabled = actionPending || gameOver || game.phase === 'auctionPending' || game.phase === 'vote' || currentPlayer.bankrupt || networkLocked;
+  if (elements.lanReturnLobbyButton) {
+    elements.lanReturnLobbyButton.hidden = !(isLanMode() && isLanStarted() && networkSession.isHost);
+  }
   renderInteractionLocks();
 }
 

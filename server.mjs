@@ -114,6 +114,22 @@ export function createRoomStore({
     return withClient(room, participant);
   }
 
+  function returnToLobby(rawCode, clientId) {
+    const room = requireRoom(rawCode);
+    const participant = requireClient(room, clientId);
+    if (!participant.isHost) {
+      throw new Error('只有房主可以返回进入游戏界面。');
+    }
+    if (!room.lobby.started) {
+      return withClient(room, participant);
+    }
+
+    room.lobby.started = false;
+    room.game = null;
+    bump(room);
+    return withClient(room, participant);
+  }
+
   function resumeRoom(rawCode, clientId) {
     const room = requireRoom(rawCode);
     const participant = requireClient(room, clientId);
@@ -336,6 +352,7 @@ export function createRoomStore({
     createRoom,
     joinRoom,
     startRoom,
+    returnToLobby,
     resumeRoom,
     leaveRoom,
     kickPlayer,
@@ -618,7 +635,7 @@ function matchApiRoute(pathname) {
   if (pathname === '/api/rooms') {
     return { name: 'rooms' };
   }
-  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|kick|state|actions|chat))?$/);
+  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|kick|return-lobby|state|actions|chat))?$/);
   if (!match) {
     return null;
   }
@@ -649,6 +666,12 @@ async function handleApiRoute({ request, response, route, store, url }) {
   if (route.name === 'start' && request.method === 'POST') {
     const body = await readJsonBody(request);
     sendJson(response, 200, store.startRoom(route.roomCode, body.clientId));
+    return;
+  }
+
+  if (route.name === 'return-lobby' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, store.returnToLobby(route.roomCode, body.clientId));
     return;
   }
 
