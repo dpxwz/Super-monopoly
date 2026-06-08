@@ -24,7 +24,13 @@ import {
   createGame,
   createInheritanceContract,
   createVoteSupportContract,
+  advanceBankruptcyAuction,
+  AUCTION_LOT_TIMEOUT_MS,
+  AUCTION_STARTING_BID,
   declareBankruptcy,
+  getMinimumAuctionBid,
+  isBankruptcyAuctionActive,
+  placeAuctionBid,
   getContractDisplayName,
   declineCurrentShareOffer,
   demolishHouse,
@@ -348,8 +354,10 @@ test('inheritance-bound shares cannot be traded and transfer directly to holder 
   assert.equal(property.shares.find((share) => share.id === unboundShareId).ownerId, 'p1');
   assert.equal(game.phase, 'auctionPending');
   assert.equal(game.pendingAuction.bankruptPlayerId, 'p1');
-  assert.ok(game.pendingAuction.assets.some((asset) => asset.type === 'share' && asset.shareId === unboundShareId));
-  assert.ok(game.pendingAuction.assets.every((asset) => !inheritedIds.includes(asset.shareId)));
+  const shareLot = game.pendingAuction.lots.find((lot) => lot.type === 'propertyShares');
+  assert.ok(shareLot);
+  assert.ok(shareLot.shareIds.includes(unboundShareId));
+  assert.ok(shareLot.shareIds.every((shareId) => !inheritedIds.includes(shareId)));
 });
 
 test('trades can be proposed in any phase, rejected, expired, and only accepted with currently available assets', () => {
@@ -820,8 +828,10 @@ test('bankruptcy pauses for auction without returning sold shares to the bank', 
   assert.equal(getBankShareCount(game, property.id), 6);
   assert.equal(property.houses, 2);
   assert.equal(property.currentRent, property.rent[2]);
-  assert.deepEqual(game.pendingAuction.assets.filter((asset) => asset.type === 'share').map((asset) => asset.shareId), shareIds(property, 0, 4));
-  assert.ok(game.pendingAuction.unresolvedRules.length > 0);
+  const shareLot = game.pendingAuction.lots.find((lot) => lot.type === 'propertyShares' && lot.propertyId === property.id);
+  assert.ok(shareLot);
+  assert.deepEqual(shareLot.shareIds, shareIds(property, 0, 4));
+  assert.equal(isBankruptcyAuctionActive(game), true);
 });
 
 test('rent that would make the current player negative does not auto-bankrupt and locks the turn until cash is positive', () => {
@@ -971,7 +981,8 @@ test('bankruptcy cancels related pending trades and freezes auction assets', () 
     now: 1_002,
   }), /破产|拍卖|暂停|auction/i);
   assert.equal(property.shares[0].ownerId, 'p1');
-  assert.ok(game.pendingAuction.assets.some((asset) => asset.shareId === property.shares[0].id));
+  const shareLot = game.pendingAuction.lots.find((lot) => lot.type === 'propertyShares');
+  assert.ok(shareLot?.shareIds.includes(property.shares[0].id));
 });
 
 test('trade cash must be a finite non-negative number', () => {
@@ -1071,11 +1082,17 @@ test('resolvePendingConstruction cannot mutate a finished game', () => {
   buildHouse(game, target.id);
   declareBankruptcy(game, 'p2', { type: 'active', reason: '费用不足' });
 
+  assert.equal(game.status, 'playing');
+  assert.equal(isBankruptcyAuctionActive(game), true);
+
+  const openedAt = game.pendingAuction.lotOpenedAt;
+  placeAuctionBid(game, 'p1', 1, openedAt + 1_000);
+  advanceBankruptcyAuction(game, openedAt + 1_000 + AUCTION_LOT_TIMEOUT_MS);
+
   assert.equal(game.status, 'gameOver');
   assert.equal(game.phase, 'gameOver');
   assert.throws(() => resolvePendingConstruction(game), /结束|game/i);
   assert.equal(game.phase, 'gameOver');
-  assert.equal(game.pendingConstruction.propertyId, target.id);
 });
 
 test('vote support contracts cannot be created after a matching vote has already started', () => {
@@ -1108,4 +1125,93 @@ test('contracts can only be created during an active trade negotiation', () => {
     () => createFreePassContract(game, { holderId: 'p2', shareRefs: shares(property, 0, 1) }),
     /交易|trade/i,
   );
+});
+
+test('bankruptcy auction groups property shares into a single lot and resolves by highest bid', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 4);
+  const openedAt = 10_000;
+
+  declareBankruptcy(game, 'p1', { type: 'passive', reason: '现金不足' });
+  game.pendingAuction.lotOpenedAt = openedAt;
+
+  assert.equal(game.pendingAuction.lots.length, 1);
+  assert.deepEqual(game.pendingAuction.lots[0].shareIds, shareIds(property, 0, 4));
+  assert.equal(getMinimumAuctionBid(game), AUCTION_STARTING_BID);
+
+  placeAuctionBid(game, 'p2', 5, openedAt + 1_000);
+  assert.equal(game.pendingAuction.currentBid.amount, 5);
+  assert.equal(getMinimumAuctionBid(game), 6);
+
+  assert.equal(advanceBankruptcyAuction(game, openedAt + 1_000), false);
+  assert.equal(advanceBankruptcyAuction(game, openedAt + 1_000 + AUCTION_LOT_TIMEOUT_MS), true);
+
+  assert.equal(getPlayerShareCount(game, property.id, 'p2'), 4);
+  assert.equal(game.players[1].cash, 1500 - 5);
+  assert.equal(game.pendingAuction, null);
+  assert.equal(game.phase, 'roll');
+});
+
+test('bankruptcy auction gifts unsold lots to a random surviving player', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 2);
+  const openedAt = 20_000;
+
+  declareBankruptcy(game, 'p1', { type: 'passive', reason: '现金不足' });
+  game.pendingAuction.lotOpenedAt = openedAt;
+
+  advanceBankruptcyAuction(game, openedAt + AUCTION_LOT_TIMEOUT_MS, { random: () => 0 });
+
+  assert.equal(getPlayerShareCount(game, property.id, 'p2'), 2);
+  assert.equal(getPlayerShareCount(game, property.id, 'p3'), 0);
+  assert.equal(game.pendingAuction, null);
+});
+
+test('bankrupt player is excluded from bankruptcy auction participation', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 2);
+
+  declareBankruptcy(game, 'p1', { type: 'passive', reason: '测试' });
+
+  assert.ok(!game.pendingAuction.participantIds.includes('p1'));
+  assert.throws(() => placeAuctionBid(game, 'p1', 1), /参与者|participant|破产|bankrupt/i);
+});
+
+test('bankruptcy auction blocks ordinary actions until complete', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 1);
+
+  declareBankruptcy(game, 'p1', { type: 'active', reason: '测试' });
+
+  assert.throws(() => declareBankruptcy(game, 'p2', { type: 'active', reason: '重复' }), /拍卖|auction/i);
+  assert.throws(() => proposeTrade(game, {
+    fromPlayerId: 'p2',
+    toPlayerId: 'p3',
+    offer: { cash: 1 },
+    request: { cash: 0 },
+    now: 1_000,
+  }), /拍卖|auction/i);
+});
+
+test('active bankruptcy in a two-player game with assets waits for auction before game over', () => {
+  const game = createGame(['Ada', 'Lin']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p2', 0, 4);
+
+  declareBankruptcy(game, 'p2', { type: 'active', reason: '主动破产' });
+
+  assert.equal(game.players[1].bankrupt, true);
+  assert.equal(game.status, 'playing');
+  assert.equal(isBankruptcyAuctionActive(game), true);
+
+  const openedAt = game.pendingAuction.lotOpenedAt;
+  advanceBankruptcyAuction(game, openedAt + AUCTION_LOT_TIMEOUT_MS, { random: () => 0 });
+
+  assert.equal(game.status, 'gameOver');
+  assert.equal(game.winnerId, 'p1');
+  assert.equal(getPlayerShareCount(game, property.id, 'p1'), 4);
 });

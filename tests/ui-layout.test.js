@@ -47,6 +47,7 @@ test('trade controls and player detail live in overlays instead of the home side
   expectMarkup('data-open-trade', 'trade button trigger');
   expectMarkup('data-open-trade-contract', 'trade contract button trigger');
   expectMarkup('id="contract-overlay"', 'contract overlay');
+  expectMarkup('id="auction-overlay"', 'bankruptcy auction overlay');
   expectMarkup('id="player-detail-overlay"', 'player detail overlay');
   expectMarkup('data-player-detail-name', 'player detail render target');
 

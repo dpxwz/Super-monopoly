@@ -12,6 +12,9 @@ export const SHARE_PERCENT = 10;
 export const MAJOR_SHAREHOLDER_SHARES = 3;
 export const DIRECT_BUILD_SHARES = 5;
 export const PENDING_TRADE_TIMEOUT_MS = 60_000;
+export const AUCTION_STARTING_BID = 1;
+export const AUCTION_MIN_INCREASE_RATIO = 0.2;
+export const AUCTION_LOT_TIMEOUT_MS = 5000;
 
 export const CONTRACT_TYPES = Object.freeze({
   FREE_PASS: 'freePass',
@@ -1020,37 +1023,200 @@ export function declareBankruptcy(game, playerId, { type = 'passive', reason = '
   cancelPendingTradesForPlayer(game, player.id);
   applyInheritanceOnBankruptcy(game, player.id);
 
-  const assets = [];
-  for (const property of game.board.filter(isPurchasable)) {
-    for (const share of property.shares) {
-      if (share.ownerId === player.id) {
-        assets.push({ type: 'share', propertyId: property.id, shareId: share.id });
-      }
-    }
-  }
-  for (const contract of game.contracts) {
-    if (contract.holderId === player.id && contract.status === 'active') {
-      assets.push({ type: 'contract', contractId: contract.id, contractType: contract.type });
-    }
-  }
+  const resumePhase = game.phase;
+  const lots = buildBankruptcyAuctionLots(game, player.id);
+  const participantIds = game.players
+    .filter((candidate) => !candidate.bankrupt && candidate.id !== player.id)
+    .map((candidate) => candidate.id);
+  const now = Date.now();
 
   game.pendingOffer = null;
   game.pendingAuction = {
     bankruptPlayerId: player.id,
     bankruptcyType: type,
     reason,
-    assets,
-    unresolvedRules: [
-      t('auction.unresolved.flow'),
-      t('auction.unresolved.cash'),
-      t('auction.unresolved.participants'),
-    ],
+    lots,
+    currentLotIndex: 0,
+    currentBid: null,
+    lotOpenedAt: now,
+    lastBidAt: null,
+    participantIds,
+    resumePhase,
+    status: 'active',
   };
   game.phase = 'auctionPending';
   addLog(game, t('log.bankruptcy', player.name, reason));
   syncPlayerProperties(game);
-  checkWinner(game);
+
+  if (lots.length === 0) {
+    completeBankruptcyAuction(game);
+  } else {
+    addLog(game, t('log.auctionLotOpened', getAuctionLotLabel(game, lots[0])));
+  }
   return player;
+}
+
+export function isBankruptcyAuctionActive(game) {
+  return game?.phase === 'auctionPending' && game.pendingAuction?.status === 'active';
+}
+
+export function getMinimumAuctionBid(game) {
+  const auction = game.pendingAuction;
+  if (!auction || auction.status !== 'active') {
+    return AUCTION_STARTING_BID;
+  }
+  if (!auction.currentBid) {
+    return AUCTION_STARTING_BID;
+  }
+  return roundAuctionMoney(auction.currentBid.amount * (1 + AUCTION_MIN_INCREASE_RATIO));
+}
+
+export function getAuctionLotRemainingMs(game, now = Date.now()) {
+  const auction = game.pendingAuction;
+  if (!auction || auction.status !== 'active') {
+    return 0;
+  }
+  const anchor = auction.lastBidAt ?? auction.lotOpenedAt;
+  return Math.max(0, AUCTION_LOT_TIMEOUT_MS - (now - anchor));
+}
+
+export function getAuctionLotLabel(game, lot) {
+  if (!lot) {
+    return t('auction.lot.unknown');
+  }
+  if (lot.type === 'propertyShares') {
+    const property = findSpace(game, lot.propertyId);
+    const label = cityName(property) || property?.name || lot.propertyId;
+    return t('auction.lot.propertyShares', label, lot.shareIds.length * SHARE_PERCENT);
+  }
+  const contract = getContract(game, lot.contractId);
+  return getContractDisplayName(game, contract);
+}
+
+export function placeAuctionBid(game, playerId, amount, now = Date.now()) {
+  const auction = game.pendingAuction;
+  if (!isBankruptcyAuctionActive(game)) {
+    throw new Error(t('error.noActiveAuction'));
+  }
+  const player = getPlayer(game, playerId);
+  if (player.bankrupt) {
+    throw new Error(t('error.bankruptCannotAct'));
+  }
+  if (playerId === auction.bankruptPlayerId || !auction.participantIds.includes(playerId)) {
+    throw new Error(t('error.notAuctionParticipant'));
+  }
+
+  const bidAmount = normalizeCashAmount(amount);
+  const minimum = getMinimumAuctionBid(game);
+  if (bidAmount < minimum) {
+    throw new Error(t('error.auctionBidTooLow', formatAuctionMoney(minimum)));
+  }
+  if (player.cash < bidAmount) {
+    throw new Error(t('error.auctionBidInsufficientCash'));
+  }
+
+  const lot = auction.lots[auction.currentLotIndex];
+  auction.currentBid = { playerId, amount: bidAmount };
+  auction.lastBidAt = now;
+  addLog(game, t('log.auctionBid', player.name, formatAuctionMoney(bidAmount), getAuctionLotLabel(game, lot)));
+  return auction;
+}
+
+export function advanceBankruptcyAuction(game, now = Date.now(), { random = Math.random } = {}) {
+  const auction = game.pendingAuction;
+  if (!isBankruptcyAuctionActive(game)) {
+    return false;
+  }
+  const anchor = auction.lastBidAt ?? auction.lotOpenedAt;
+  if (now - anchor < AUCTION_LOT_TIMEOUT_MS) {
+    return false;
+  }
+  resolveCurrentAuctionLot(game, now, random);
+  return true;
+}
+
+function buildBankruptcyAuctionLots(game, bankruptPlayerId) {
+  const lots = [];
+  for (const property of game.board.filter(isPurchasable)) {
+    const shareIds = property.shares
+      .filter((share) => share.ownerId === bankruptPlayerId)
+      .map((share) => share.id);
+    if (shareIds.length > 0) {
+      lots.push({ type: 'propertyShares', propertyId: property.id, shareIds });
+    }
+  }
+  for (const contract of game.contracts) {
+    if (contract.holderId === bankruptPlayerId && contract.status === 'active') {
+      lots.push({ type: 'contract', contractId: contract.id, contractType: contract.type });
+    }
+  }
+  return lots;
+}
+
+function resolveCurrentAuctionLot(game, now, random) {
+  const auction = game.pendingAuction;
+  const lot = auction.lots[auction.currentLotIndex];
+
+  if (auction.currentBid) {
+    const winner = getPlayer(game, auction.currentBid.playerId);
+    const amount = auction.currentBid.amount;
+    winner.cash -= amount;
+    addLog(game, t('log.auctionWon', winner.name, getAuctionLotLabel(game, lot), formatAuctionMoney(amount)));
+    transferAuctionLot(game, auction.bankruptPlayerId, winner.id, lot);
+  } else if (auction.participantIds.length > 0) {
+    const recipientId = pickRandomAuctionParticipant(auction.participantIds, random);
+    const recipient = getPlayer(game, recipientId);
+    addLog(game, t('log.auctionGifted', getAuctionLotLabel(game, lot), recipient.name));
+    transferAuctionLot(game, auction.bankruptPlayerId, recipientId, lot);
+  }
+
+  auction.currentLotIndex += 1;
+  auction.currentBid = null;
+  auction.lastBidAt = null;
+
+  if (auction.currentLotIndex >= auction.lots.length) {
+    completeBankruptcyAuction(game);
+    return;
+  }
+
+  auction.lotOpenedAt = now;
+  addLog(game, t('log.auctionLotOpened', getAuctionLotLabel(game, auction.lots[auction.currentLotIndex])));
+}
+
+function transferAuctionLot(game, fromPlayerId, toPlayerId, lot) {
+  if (lot.type === 'propertyShares') {
+    const shareRefs = lot.shareIds.map((shareId) => ({ spaceId: lot.propertyId, shareId }));
+    transferShares(game, fromPlayerId, toPlayerId, shareRefs);
+    return;
+  }
+  if (lot.type === 'contract') {
+    transferContract(game, lot.contractId, toPlayerId);
+  }
+}
+
+function completeBankruptcyAuction(game) {
+  const resumePhase = game.pendingAuction?.resumePhase ?? 'end';
+  game.pendingAuction = null;
+  if (game.status !== 'gameOver') {
+    game.phase = resumePhase;
+    refreshPendingConstruction(game);
+    refreshCashRecoveryPhase(game);
+  }
+  checkWinner(game);
+  addLog(game, t('log.auctionComplete'));
+}
+
+function pickRandomAuctionParticipant(participantIds, random) {
+  const index = Math.floor(random() * participantIds.length);
+  return participantIds[index];
+}
+
+function roundAuctionMoney(value) {
+  return Math.ceil(value * 100) / 100;
+}
+
+function formatAuctionMoney(value) {
+  return Number.isInteger(value) ? String(value) : Number(value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 function resolveLanding(game, player) {

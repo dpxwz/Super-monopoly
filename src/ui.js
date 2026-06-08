@@ -13,10 +13,17 @@ import {
   createInheritanceContract,
   createVoteSupportContract,
   declineCurrentShareOffer,
+  AUCTION_STARTING_BID,
+  advanceBankruptcyAuction,
   declareBankruptcy,
   demolishHouse,
   endTurn,
   expirePendingTrades,
+  getAuctionLotLabel,
+  getAuctionLotRemainingMs,
+  getMinimumAuctionBid,
+  isBankruptcyAuctionActive,
+  placeAuctionBid,
   getBankShareCount,
   getBuildEligibility,
   getColorGroupProperties,
@@ -92,7 +99,20 @@ const elements = {
   shareCountRange: document.querySelector('#share-count-range'),
   sharePreview: document.querySelector('#share-preview'),
   offerText: document.querySelector('#offer-text'),
-  auctionWarning: document.querySelector('#auction-warning'),
+  auctionOverlay: document.querySelector('#auction-overlay'),
+  auctionSubtitle: document.querySelector('#auction-subtitle'),
+  auctionLotLabel: document.querySelector('#auction-lot-label'),
+  auctionCurrentBid: document.querySelector('#auction-current-bid'),
+  auctionTimer: document.querySelector('#auction-timer'),
+  auctionBidForm: document.querySelector('#auction-bid-form'),
+  auctionBidderField: document.querySelector('#auction-bidder-field'),
+  auctionBidder: document.querySelector('#auction-bidder'),
+  auctionBidAmount: document.querySelector('#auction-bid-amount'),
+  auctionBidRange: document.querySelector('#auction-bid-range'),
+  auctionMinBid: document.querySelector('#auction-min-bid'),
+  auctionBidButton: document.querySelector('#auction-bid-button'),
+  auctionProgressLabel: document.querySelector('#auction-progress-label'),
+  auctionLotQueue: document.querySelector('#auction-lot-queue'),
   message: document.querySelector('#message'),
   players: document.querySelector('#players'),
   properties: document.querySelector('#properties'),
@@ -177,6 +197,8 @@ window.superMonopoly = {
 elements.board.style.setProperty('--board-side-length', BOARD_SIDE_LENGTH);
 
 let sharePurchaseBinding;
+let auctionBidBinding;
+let auctionTimerId = null;
 let tradeOfferCashBinding;
 let tradeRequestCashBinding;
 const tradeShareLineBindings = {
@@ -316,6 +338,31 @@ function bindEvents() {
     buySelectedShares();
   });
   initRangeBindings();
+
+  elements.auctionBidder?.addEventListener('change', () => {
+    auctionBidBinding?.refreshBounds();
+    auctionBidBinding?.setValue(getMinimumAuctionBid(game));
+  });
+
+  elements.auctionBidForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!isBankruptcyAuctionActive(game)) {
+      return;
+    }
+    const playerId = isLanMode() ? networkSession.playerId : getCurrentAuctionBidderId();
+    if (!playerId) {
+      setMessage(t('error.notAuctionParticipant'), true);
+      return;
+    }
+    const amount = auctionBidBinding?.getValue() ?? Number(elements.auctionBidAmount.value);
+    safeAction(async () => {
+      await runGameAction(() => placeAuctionBid(game, playerId, amount, Date.now()), {
+        type: 'placeAuctionBid',
+        payload: { amount },
+      });
+      setMessage(t('log.auctionBid', game.players.find((player) => player.id === playerId)?.name ?? playerId, formatMoney(amount), getAuctionLotLabel(game, game.pendingAuction.lots[game.pendingAuction.currentLotIndex])));
+    });
+  });
 
   elements.declineButton.addEventListener('click', () => {
     safeAction(async () => {
@@ -558,6 +605,9 @@ function bindEvents() {
   });
 
   elements.players.addEventListener('dblclick', (event) => {
+    if (isBankruptcyAuctionActive(game)) {
+      return;
+    }
     const playerCard = event.target.closest('[data-player-id]');
     if (playerCard) {
       openPlayerDetail(playerCard.dataset.playerId);
@@ -565,9 +615,20 @@ function bindEvents() {
   });
 
   document.addEventListener('click', (event) => {
+    if (isBankruptcyAuctionActive(game)) {
+      if (!event.target.closest('#auction-overlay')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     if (event.target.closest('[data-open-trade]')) {
       if (isLanMode() && !isLanStarted()) {
         setMessage('联机游戏开始后才能发起交易。', true);
+        return;
+      }
+      if (isFocusedPlayerBankrupt()) {
+        setMessage(t('ui.tradeDisabledBankrupt'), true);
         return;
       }
       renderTradePanel();
@@ -577,6 +638,10 @@ function bindEvents() {
     if (event.target.closest('[data-open-trade-contract]')) {
       if (isLanMode() && !isLanStarted()) {
         setMessage('联机游戏开始后才能创建合同。', true);
+        return;
+      }
+      if (isFocusedPlayerBankrupt()) {
+        setMessage(t('ui.tradeDisabledBankrupt'), true);
         return;
       }
       openContractOverlayFromTrade();
@@ -600,7 +665,7 @@ function bindEvents() {
   });
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && !isBankruptcyAuctionActive(game)) {
       closeTopOverlay();
     }
   });
@@ -688,13 +753,28 @@ function canVoteFor(playerId) {
   return !isLanMode() || playerId === networkSession.playerId;
 }
 
+function isFocusedPlayerBankrupt() {
+  return Boolean(getFocusedPlayer()?.bankrupt);
+}
+
+function canOpenTradePanel() {
+  if (actionPending || isBankruptcyAuctionActive(game)) {
+    return false;
+  }
+  if (isLanMode() && !isLanStarted()) {
+    return false;
+  }
+  return !isFocusedPlayerBankrupt();
+}
+
 function renderInteractionLocks() {
+  const tradeLocked = !canOpenTradePanel();
   const lobbyLocked = isLanMode() && !isLanStarted();
   if (elements.setupSubmit) elements.setupSubmit.disabled = actionPending || isLanMode();
   if (elements.lanStartButton) elements.lanStartButton.disabled = actionPending || (networkSession.room?.lobby?.players ?? []).length < 2;
   if (elements.lanLeaveButton) elements.lanLeaveButton.disabled = actionPending;
-  if (elements.openTradeButton) elements.openTradeButton.disabled = actionPending || lobbyLocked;
-  if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = actionPending || lobbyLocked;
+  if (elements.openTradeButton) elements.openTradeButton.disabled = tradeLocked;
+  if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = tradeLocked;
 }
 
 async function runGameAction(localAction, lanAction) {
@@ -1031,7 +1111,11 @@ function render() {
   renderContracts();
   renderFocusedPlayerPanel();
   renderChatPanel();
-  renderBankruptcyWarning();
+  if (isFocusedPlayerBankrupt() && elements.tradeOverlay && !elements.tradeOverlay.hidden) {
+    closeTradeOverlay();
+  }
+  renderAuctionOverlay();
+  ensureAuctionTimer();
   renderLog();
 
   window.superMonopolyGame = game;
@@ -1596,11 +1680,153 @@ function selectTradeOfferContract(contractId) {
   if (option) option.selected = true;
 }
 
-function renderBankruptcyWarning() {
-  elements.auctionWarning.hidden = game.phase !== 'auctionPending';
-  if (game.phase === 'auctionPending' && game.pendingAuction) {
-    const assetCount = game.pendingAuction.assets.length;
-    elements.auctionWarning.querySelector('span').textContent = `待拍卖资产 ${assetCount} 项；拍卖参与者、起拍价、现金处理仍未制定。`;
+function getCurrentAuctionBidderId() {
+  const auction = game.pendingAuction;
+  if (!auction) {
+    return null;
+  }
+  if (isLanMode()) {
+    return networkSession.playerId;
+  }
+  const selected = elements.auctionBidder?.value;
+  if (selected && auction.participantIds.includes(selected)) {
+    return selected;
+  }
+  return auction.participantIds[0] ?? null;
+}
+
+function isAuctionParticipant() {
+  const auction = game.pendingAuction;
+  if (!auction) {
+    return false;
+  }
+  const playerId = isLanMode() ? networkSession.playerId : getCurrentAuctionBidderId();
+  return Boolean(
+    playerId
+    && playerId !== auction.bankruptPlayerId
+    && auction.participantIds.includes(playerId),
+  );
+}
+
+function canPlaceAuctionBid() {
+  if (!isBankruptcyAuctionActive(game) || actionPending) {
+    return false;
+  }
+  if (isLanMode() && !isLanStarted()) {
+    return false;
+  }
+  return isAuctionParticipant();
+}
+
+function ensureAuctionTimer() {
+  if (!isBankruptcyAuctionActive(game)) {
+    document.body.classList.remove('is-auction-active');
+    if (auctionTimerId) {
+      clearInterval(auctionTimerId);
+      auctionTimerId = null;
+    }
+    return;
+  }
+
+  document.body.classList.add('is-auction-active');
+  if (auctionTimerId) {
+    return;
+  }
+
+  auctionTimerId = window.setInterval(() => {
+    if (!isBankruptcyAuctionActive(game)) {
+      clearInterval(auctionTimerId);
+      auctionTimerId = null;
+      document.body.classList.remove('is-auction-active');
+      render();
+      return;
+    }
+    if (!isLanMode() && advanceBankruptcyAuction(game, Date.now())) {
+      render();
+      return;
+    }
+    renderAuctionOverlay({ timerOnly: true });
+  }, 200);
+}
+
+function renderAuctionOverlay({ timerOnly = false } = {}) {
+  const active = isBankruptcyAuctionActive(game);
+  if (!elements.auctionOverlay) {
+    return;
+  }
+
+  elements.auctionOverlay.hidden = !active;
+  if (!active || !game.pendingAuction) {
+    document.body.classList.remove('is-auction-active');
+    return;
+  }
+
+  const auction = game.pendingAuction;
+  const bankruptPlayer = game.players.find((player) => player.id === auction.bankruptPlayerId);
+  const currentLot = auction.lots[auction.currentLotIndex];
+  const minimumBid = getMinimumAuctionBid(game);
+  const remainingMs = getAuctionLotRemainingMs(game, Date.now());
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+  const canBid = canPlaceAuctionBid();
+
+  if (!timerOnly) {
+    elements.auctionSubtitle.textContent = t('ui.auctionSubtitle', bankruptPlayer?.name ?? auction.bankruptPlayerId);
+    elements.auctionLotLabel.textContent = getAuctionLotLabel(game, currentLot);
+    elements.auctionProgressLabel.textContent = t('ui.auctionLotQueue', auction.currentLotIndex + 1, auction.lots.length);
+    if (elements.auctionBidderField && elements.auctionBidder) {
+      const showBidderSelect = !isLanMode();
+      elements.auctionBidderField.hidden = !showBidderSelect;
+      if (showBidderSelect) {
+        const previous = elements.auctionBidder.value;
+        elements.auctionBidder.innerHTML = auction.participantIds.map((playerId) => {
+          const player = game.players.find((candidate) => candidate.id === playerId);
+          return `<option value="${escapeHtml(playerId)}">${escapeHtml(player?.name ?? playerId)}</option>`;
+        }).join('');
+        if (auction.participantIds.includes(previous)) {
+          elements.auctionBidder.value = previous;
+        }
+      }
+    }
+    elements.auctionLotQueue.innerHTML = auction.lots.map((lot, index) => {
+      const classes = [
+        index === auction.currentLotIndex ? 'is-current' : '',
+        index < auction.currentLotIndex ? 'is-done' : '',
+      ].filter(Boolean).join(' ');
+      return `<li class="${classes}">${escapeHtml(getAuctionLotLabel(game, lot))}</li>`;
+    }).join('');
+  }
+
+  if (auction.currentBid) {
+    const leader = game.players.find((player) => player.id === auction.currentBid.playerId);
+    elements.auctionCurrentBid.textContent = t('ui.auctionCurrentBid', `$${formatMoney(auction.currentBid.amount)}`, leader?.name ?? auction.currentBid.playerId);
+  } else {
+    elements.auctionCurrentBid.textContent = t('ui.auctionNoBidYet', formatMoney(AUCTION_STARTING_BID));
+  }
+  elements.auctionTimer.textContent = t('ui.auctionTimer', remainingSeconds);
+  elements.auctionMinBid.textContent = t('ui.auctionMinBid', formatMoney(minimumBid));
+
+  const canParticipate = isAuctionParticipant();
+  if (elements.auctionBidForm) {
+    elements.auctionBidForm.hidden = !canParticipate;
+  }
+
+  if (!timerOnly && canParticipate) {
+    auctionBidBinding?.refreshBounds();
+    auctionBidBinding?.setValue(minimumBid);
+  }
+
+  if (elements.auctionBidButton) {
+    elements.auctionBidButton.disabled = !canBid;
+  }
+  if (elements.auctionBidAmount) {
+    elements.auctionBidAmount.disabled = !canBid;
+  }
+  if (elements.auctionBidRange) {
+    elements.auctionBidRange.disabled = !canBid;
+  }
+
+  if (!canParticipate && elements.auctionMinBid) {
+    elements.auctionMinBid.textContent = t('ui.auctionSpectator');
   }
 }
 
@@ -2200,6 +2426,16 @@ function initRangeBindings() {
     getStep: () => 0.1,
   });
 
+  auctionBidBinding = bindRangeAndNumber(elements.auctionBidRange, elements.auctionBidAmount, {
+    getMin: () => getMinimumAuctionBid(game),
+    getMax: () => {
+      const playerId = getCurrentAuctionBidderId();
+      const player = playerId ? game.players.find((candidate) => candidate.id === playerId) : null;
+      return Math.max(getMinimumAuctionBid(game), player?.cash ?? getMinimumAuctionBid(game));
+    },
+    getStep: () => 0.1,
+    onUpdate: () => {},
+  });
 }
 
 function formatMoney(value) {

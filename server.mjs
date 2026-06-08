@@ -16,10 +16,12 @@ import {
   createInheritanceContract,
   createVoteSupportContract,
   declineCurrentShareOffer,
+  advanceBankruptcyAuction,
   declareBankruptcy,
   demolishHouse,
   endTurn,
   expirePendingTrades,
+  placeAuctionBid,
   getCurrentPlayer,
   proposeTrade,
   rejectTrade,
@@ -139,8 +141,11 @@ export function createRoomStore({
   function getState(rawCode, clientId = null) {
     const room = requireRoom(rawCode);
     const participant = clientId ? requireClient(room, clientId) : null;
-    if (room.game && expirePendingTrades(room.game, Date.now()).length > 0) {
-      bump(room);
+    if (room.game) {
+      const now = Date.now();
+      if (expirePendingTrades(room.game, now).length > 0 || advanceBankruptcyAuction(room.game, now)) {
+        bump(room);
+      }
     }
     return withClient(room, participant);
   }
@@ -175,7 +180,8 @@ export function createRoomStore({
 
     const payload = action.payload ?? {};
     const game = room.game;
-    if (expirePendingTrades(game, Date.now()).length > 0) {
+    const now = Date.now();
+    if (expirePendingTrades(game, now).length > 0 || advanceBankruptcyAuction(game, now)) {
       bump(room);
     }
     const current = () => getCurrentPlayer(game);
@@ -263,6 +269,9 @@ export function createRoomStore({
         break;
       case 'createContract':
         createContractFromPayload(game, payload, participant);
+        break;
+      case 'placeAuctionBid':
+        placeAuctionBid(game, participant.playerId, Number(payload.amount), Date.now());
         break;
       case 'restart':
         if (!participant.isHost) {

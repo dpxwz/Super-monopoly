@@ -152,10 +152,6 @@
                   <span id="share-preview" class="badge">10% · $0</span>
                 </form>
                 <p id="offer-text" class="offer-text"></p>
-                <section id="auction-warning" class="status-banner is-warning" hidden>
-                  <strong>破产拍卖规则暂未制定</strong>
-                  <span>游戏已暂停在拍卖等待状态，请根据补充规则手动处理待拍卖资产后再继续。</span>
-                </section>
                 <p id="message" class="message" role="status"></p>
                 <section class="event-log-wrap" aria-labelledby="log-heading">
                   <div class="section-heading compact">
@@ -322,6 +318,46 @@
           </label>
           <button type="submit">创建合同</button>
         </form>
+      </section>
+    </div>
+
+    <div id="auction-overlay" class="overlay overlay-blocking" role="dialog" aria-modal="true" aria-labelledby="auction-heading" hidden>
+      <section class="overlay-card auction-overlay-card">
+        <div class="overlay-heading">
+          <div>
+            <p class="eyebrow">bankruptcy auction</p>
+            <h2 id="auction-heading" data-i18n="ui.auctionHeading">破产拍卖</h2>
+            <p id="auction-subtitle" class="muted"></p>
+          </div>
+        </div>
+        <div class="auction-lot-panel">
+          <p class="eyebrow" data-i18n="ui.auctionCurrentLot">当前拍品</p>
+          <p id="auction-lot-label" class="auction-lot-label"></p>
+          <p id="auction-current-bid" class="auction-current-bid"></p>
+          <p id="auction-timer" class="auction-timer badge"></p>
+        </div>
+        <form id="auction-bid-form" class="stacked-form">
+          <label id="auction-bidder-field" class="auction-bidder-field" hidden>
+            出价玩家
+            <select id="auction-bidder"></select>
+          </label>
+          <label class="range-input-label">
+            <span data-i18n="ui.auctionBidAmount">出价</span>
+            <span class="range-input-group">
+              <input id="auction-bid-amount" type="number" min="1" step="0.1" value="1" />
+              <input id="auction-bid-range" type="range" min="1" max="1" step="0.1" value="1" aria-label="出价滑条" />
+            </span>
+          </label>
+          <p id="auction-min-bid" class="muted compact-hint"></p>
+          <button id="auction-bid-button" type="submit" data-i18n="ui.auctionPlaceBid">出价</button>
+        </form>
+        <section class="overlay-subsection">
+          <div class="section-heading compact">
+            <h3 data-i18n="ui.auctionProgress">拍卖进度</h3>
+            <span id="auction-progress-label"></span>
+          </div>
+          <ol id="auction-lot-queue" class="auction-lot-queue"></ol>
+        </section>
       </section>
     </div>
 

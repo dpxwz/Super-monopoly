@@ -1091,6 +1091,56 @@ body.is-local-mode .chat-panel::after {
   z-index: 50;
 }
 
+.overlay-blocking {
+  z-index: 60;
+}
+
+body.is-auction-active .game-layout,
+body.is-auction-active .left-rail,
+body.is-auction-active .right-rail,
+body.is-auction-active .board-stage {
+  pointer-events: none;
+}
+
+.auction-lot-panel {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.auction-lot-label {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.auction-current-bid {
+  color: var(--muted);
+}
+
+.auction-timer {
+  justify-self: start;
+}
+
+.auction-lot-queue {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.auction-lot-queue li.is-current {
+  font-weight: 700;
+}
+
+.auction-lot-queue li.is-done {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
 .trade-shares-block {
   display: grid;
   gap: 8px;
