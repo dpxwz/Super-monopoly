@@ -1292,6 +1292,10 @@ function render() {
 
   if (game.turn !== lastTurnState.turn || game.round !== lastTurnState.round) {
     skipAllAnimations();
+    const isTransition = lastGameInstance && lastGameInstance === game;
+    if (isTransition) {
+      playTurnSound(lastTurnState.turn, game.turn);
+    }
     lastTurnState = {
       turn: game.turn,
       round: game.round
@@ -1336,6 +1340,7 @@ function render() {
   renderLog();
 
   window.superMonopolyGame = game;
+  checkAndAnimatePlayerCash();
 }
 
 function renderLobbyState() {
@@ -1643,7 +1648,7 @@ function renderPlayers() {
       <article class="player-card${activeClass}" data-player-id="${player.id}">
         <div class="card-topline" style="margin-bottom: 0;">
           <strong><span class="player-avatar" style="--dot: ${playerColors[index]}">${index + 1}</span>${escapeHtml(player.name)}</strong>
-          <span class="badge" style="font-weight: 700; color: var(--ink);">$${formatMoney(player.cash)}</span>
+          <span class="badge player-cash-badge" style="font-weight: 700; color: var(--ink);">$${formatMoney(player.cash)}</span>
         </div>
       </article>
     `;
@@ -2848,3 +2853,154 @@ function skipAllAnimations() {
   }
   updateTokenOverlapOffsets();
 }
+
+let lastKnownPlayerCash = {};
+
+function checkAndAnimatePlayerCash() {
+  if (!game || !game.players) return;
+
+  const isBrandNewGame = !game.lastDice && game.round === 1 && game.turn === 0 && game.phase === 'roll';
+
+  game.players.forEach((player) => {
+    const prevCash = lastKnownPlayerCash[player.id];
+    const currentCash = player.cash;
+
+    if (isBrandNewGame) {
+      lastKnownPlayerCash[player.id] = currentCash;
+      return;
+    }
+
+    if (prevCash !== undefined && prevCash !== currentCash) {
+      const diff = currentCash - prevCash;
+      if (diff !== 0) {
+        animateCashChange(player.id, diff);
+      }
+    }
+
+    lastKnownPlayerCash[player.id] = currentCash;
+  });
+}
+
+function animateCashChange(playerId, diff) {
+  const playerCard = document.querySelector(`.player-card[data-player-id="${playerId}"]`);
+  if (!playerCard) return;
+
+  const badge = playerCard.querySelector('.player-cash-badge');
+  if (!badge) return;
+
+  const rect = badge.getBoundingClientRect();
+  const x = rect.left + rect.width / 2 + window.scrollX;
+  const y = rect.top + window.scrollY;
+
+  const popup = document.createElement('span');
+  popup.className = `cash-animation-popup ${diff > 0 ? 'positive' : 'negative'}`;
+  popup.textContent = (diff > 0 ? '+' : '') + formatMoney(diff);
+  popup.style.left = `${x}px`;
+  popup.style.top = `${y}px`;
+
+  document.body.appendChild(popup);
+
+  popup.addEventListener('animationend', () => {
+    popup.remove();
+  });
+}
+
+let audioCtx = null;
+
+function getAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  return audioCtx;
+}
+
+function playAudioTone(type) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+
+    if (type === 'turnEnd') {
+      // Sound 1: Turn ended, next is not me (gentle double beep, e.g. D5 then B4)
+      const notes = [587.33, 493.88];
+      const durations = [0.08, 0.12];
+      const startOffsets = [0, 0.08];
+
+      notes.forEach((freq, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + startOffsets[index]);
+
+        const noteStart = now + startOffsets[index];
+        const noteDuration = durations[index];
+
+        gain.gain.setValueAtTime(0, noteStart);
+        gain.gain.linearRampToValueAtTime(0.08, noteStart + 0.01);
+        gain.gain.setValueAtTime(0.08, noteStart + noteDuration - 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, noteStart + noteDuration);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(noteStart);
+        osc.stop(noteStart + noteDuration);
+      });
+    } else if (type === 'turnStart') {
+      // Sound 2: My turn starts (bright ascending chime: C5 -> E5 -> G5 -> C6)
+      const notes = [523.25, 659.25, 783.99, 1046.50];
+      const delays = [0, 0.07, 0.14, 0.21];
+
+      notes.forEach((freq, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + delays[index]);
+
+        const noteStart = now + delays[index];
+        gain.gain.setValueAtTime(0, noteStart);
+        gain.gain.linearRampToValueAtTime(0.12, noteStart + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.25);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(noteStart);
+        osc.stop(noteStart + 0.35);
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to play audio tone:', e);
+  }
+}
+
+function playTurnSound(prevTurnIndex, nextTurnIndex) {
+  if (!game || !game.players) return;
+  const prevPlayer = game.players[prevTurnIndex];
+  const nextPlayer = game.players[nextTurnIndex];
+  if (!prevPlayer || !nextPlayer) return;
+
+  if (isLanMode()) {
+    const myPlayerId = networkSession.playerId;
+    // Condition: Other player's turn ends (prevPlayer is not local player)
+    if (prevPlayer.id !== myPlayerId) {
+      if (nextPlayer.id === myPlayerId) {
+        // Next player is local player
+        playAudioTone('turnStart');
+      } else {
+        // Next player is not local player
+        playAudioTone('turnEnd');
+      }
+    }
+  } else {
+    // Local mode: only play Sound 1
+    playAudioTone('turnEnd');
+  }
+}
+
