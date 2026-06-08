@@ -1127,7 +1127,8 @@ body.is-local-mode .chat-panel::after {
 }
 
 .trade-button,
-.bankruptcy-button {
+.bankruptcy-button,
+.kick-vote-button {
   width: 100%;
   min-height: 64px;
   border-radius: 22px;
@@ -1135,7 +1136,8 @@ body.is-local-mode .chat-panel::after {
   letter-spacing: -0.02em;
 }
 
-.bankruptcy-button {
+.bankruptcy-button,
+.kick-vote-button {
   min-height: 52px;
   font-size: 0.95rem;
 }
@@ -1659,4 +1661,39 @@ body.is-auction-active .board-stage {
     opacity: 0;
   }
 }
+
+.kick-vote-status-panel {
+  margin-top: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 8px;
+}
+
+.kick-vote-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.kick-vote-voters-small {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.kick-vote-voter-small-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 

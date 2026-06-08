@@ -46,6 +46,8 @@ import {
   rollAndMove,
   startBuildVote,
   startDemolishVote,
+  initiateKickVote,
+  castKickVote,
 } from './game.js';
 import { t, setLocale, getLocale, cityName, countryName, colorName, detectLocale } from './i18n.js';
 import {
@@ -97,6 +99,11 @@ const elements = {
   declineButton: document.querySelector('#decline-button'),
   endButton: document.querySelector('#end-button'),
   bankruptcyButton: document.querySelector('#bankruptcy-button'),
+  kickVoteButton: document.querySelector('#kick-vote-button'),
+  kickVoteStatusPanel: document.querySelector('#kick-vote-status-panel'),
+  kickVoteTimerSmall: document.querySelector('#kick-vote-timer-small'),
+  kickVoteCountSmall: document.querySelector('#kick-vote-count-small'),
+  kickVoteVotersSmall: document.querySelector('#kick-vote-voters-small'),
   newGameButton: document.querySelector('#new-game-button'),
   sharePurchaseForm: document.querySelector('#share-purchase-form'),
   shareCount: document.querySelector('#share-count'),
@@ -206,6 +213,8 @@ elements.board.style.setProperty('--board-side-length', BOARD_SIDE_LENGTH);
 let sharePurchaseBinding;
 let auctionBidBinding;
 let auctionTimerId = null;
+let kickVoteTimerId = null;
+let lastAutoOpenedVoteTime = 0;
 let tradeOfferCashBinding;
 let tradeRequestCashBinding;
 const tradeShareLineBindings = {
@@ -425,6 +434,30 @@ function bindEvents() {
         payload: { reason: '主动破产' },
       });
       setMessage(t('msg.activeBankruptcy', player.name));
+    });
+  });
+
+  elements.kickVoteButton.addEventListener('click', () => {
+    safeAction(async () => {
+      if (!isLanMode()) return;
+
+      if (game.pendingKickVote) {
+        const voterId = networkSession.playerId;
+        if (!voterId) return;
+        const hasVoted = game.pendingKickVote.votes[voterId] === 'yes';
+        const stance = hasVoted ? 'cancel' : 'yes';
+        await runGameAction(() => castKickVote(game, voterId, stance), {
+          type: 'castKickVote',
+          payload: { voterId, stance }
+        });
+      } else {
+        const initiatorId = networkSession.playerId;
+        if (!initiatorId) return;
+        await runGameAction(() => initiateKickVote(game, initiatorId), {
+          type: 'initiateKickVote',
+          payload: { initiatorId }
+        });
+      }
     });
   });
 
@@ -1341,6 +1374,28 @@ function render() {
   }
   renderAuctionOverlay();
   ensureAuctionTimer();
+  
+  if (isLanMode()) {
+    const vote = game.pendingKickVote;
+    if (vote) {
+      ensureKickVoteTimer();
+      renderKickVoteWidget();
+    } else {
+      ensureKickVoteTimer();
+      if (elements.kickVoteStatusPanel) {
+        elements.kickVoteStatusPanel.hidden = true;
+      }
+    }
+  } else {
+    ensureKickVoteTimer();
+    if (elements.kickVoteButton) {
+      elements.kickVoteButton.hidden = true;
+    }
+    if (elements.kickVoteStatusPanel) {
+      elements.kickVoteStatusPanel.hidden = true;
+    }
+  }
+
   renderLog();
 
   window.superMonopolyGame = game;
@@ -1365,6 +1420,7 @@ function renderLobbyState() {
   renderBoard();
   hideTurnControls();
   elements.bankruptcyButton.disabled = true;
+  elements.kickVoteButton.disabled = true;
   if (elements.openTradeButton) elements.openTradeButton.disabled = true;
   if (elements.openTradeContractButton) elements.openTradeContractButton.disabled = true;
   elements.offerText.textContent = '';
@@ -1587,6 +1643,54 @@ function renderControls() {
   }
 
   elements.bankruptcyButton.disabled = actionPending || gameOver || game.phase === 'auctionPending' || game.phase === 'vote' || currentPlayer.bankrupt || networkLocked;
+
+  if (elements.kickVoteButton) {
+    elements.kickVoteButton.hidden = !isLanMode();
+  }
+  if (elements.kickVoteStatusPanel && !isLanMode()) {
+    elements.kickVoteStatusPanel.hidden = true;
+  }
+
+  if (isLanMode()) {
+    const isVoteActive = Boolean(game.pendingKickVote);
+    if (isVoteActive) {
+      const myId = networkSession.playerId;
+      const targetId = game.pendingKickVote.targetId;
+      const localPlayer = game.players.find((p) => p.id === myId);
+      const hasVoted = myId ? game.pendingKickVote.votes[myId] === 'yes' : false;
+      const targetIsMe = myId === targetId;
+      const isBankrupt = localPlayer?.bankrupt ?? false;
+
+      if (targetIsMe) {
+        elements.kickVoteButton.textContent = '被投票中';
+        elements.kickVoteButton.disabled = true;
+        elements.kickVoteButton.classList.add('danger-button');
+        elements.kickVoteButton.classList.remove('ghost-button');
+      } else if (isBankrupt) {
+        elements.kickVoteButton.textContent = '投票进行中';
+        elements.kickVoteButton.disabled = true;
+        elements.kickVoteButton.classList.add('danger-button');
+        elements.kickVoteButton.classList.remove('ghost-button');
+      } else if (hasVoted) {
+        elements.kickVoteButton.textContent = t('ui.cancelVote') || '取消投票';
+        elements.kickVoteButton.disabled = actionPending;
+        elements.kickVoteButton.classList.remove('danger-button');
+        elements.kickVoteButton.classList.add('ghost-button');
+      } else {
+        elements.kickVoteButton.textContent = t('ui.kickVoteButton') || '投票踢出';
+        elements.kickVoteButton.disabled = actionPending;
+        elements.kickVoteButton.classList.add('danger-button');
+        elements.kickVoteButton.classList.remove('ghost-button');
+      }
+    } else {
+      elements.kickVoteButton.textContent = t('ui.buttonKickVote') || '发起踢出投票';
+      elements.kickVoteButton.classList.add('danger-button');
+      elements.kickVoteButton.classList.remove('ghost-button');
+      const localPlayer = game.players.find((p) => p.id === networkSession.playerId);
+      const isCurrentPlayer = getCurrentPlayer(game).id === networkSession.playerId;
+      elements.kickVoteButton.disabled = actionPending || gameOver || isCurrentPlayer || !localPlayer || localPlayer.bankrupt || game.phase === 'auctionPending';
+    }
+  }
   if (elements.lanReturnLobbyButton) {
     elements.lanReturnLobbyButton.hidden = !(isLanMode() && isLanStarted() && networkSession.isHost);
   }
@@ -1957,6 +2061,79 @@ function canPlaceAuctionBid() {
     return false;
   }
   return isAuctionParticipant();
+}
+
+function ensureKickVoteTimer() {
+  if (!isLanMode()) {
+    if (kickVoteTimerId) {
+      clearInterval(kickVoteTimerId);
+      kickVoteTimerId = null;
+    }
+    return;
+  }
+
+  const active = Boolean(game.pendingKickVote);
+  if (!active) {
+    if (kickVoteTimerId) {
+      clearInterval(kickVoteTimerId);
+      kickVoteTimerId = null;
+    }
+    return;
+  }
+
+  if (kickVoteTimerId) {
+    return;
+  }
+
+  kickVoteTimerId = window.setInterval(() => {
+    const isVoteActive = Boolean(game.pendingKickVote);
+    if (!isVoteActive) {
+      clearInterval(kickVoteTimerId);
+      kickVoteTimerId = null;
+      render();
+      return;
+    }
+    renderKickVoteWidget({ timerOnly: true });
+  }, 200);
+}
+
+function renderKickVoteWidget({ timerOnly = false } = {}) {
+  if (!isLanMode() || !elements.kickVoteStatusPanel) {
+    return;
+  }
+
+  const active = Boolean(game.pendingKickVote);
+  elements.kickVoteStatusPanel.hidden = !active;
+  if (!active) {
+    return;
+  }
+
+  const vote = game.pendingKickVote;
+  const remainingMs = Math.max(0, vote.duration - (Date.now() - vote.createdAt));
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+  const timerStr = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  elements.kickVoteTimerSmall.textContent = timerStr;
+
+  if (!timerOnly) {
+    const otherActivePlayers = game.players.filter((p) => !p.bankrupt && p.id !== vote.targetId);
+    const yesVotes = otherActivePlayers.filter((p) => vote.votes[p.id] === 'yes');
+
+    elements.kickVoteCountSmall.textContent = t('ui.kickVoteCount', yesVotes.length, otherActivePlayers.length);
+
+    elements.kickVoteVotersSmall.innerHTML = otherActivePlayers.map((player) => {
+      const hasVoted = vote.votes[player.id] === 'yes';
+      const statusText = hasVoted ? t('ui.kickVotedYes') : t('ui.kickVoteNotVoted');
+
+      return `
+        <div class="kick-vote-voter-small-row">
+          <span>${escapeHtml(player.name)}: ${escapeHtml(statusText)}</span>
+        </div>
+      `;
+    }).join('');
+  }
 }
 
 function ensureAuctionTimer() {

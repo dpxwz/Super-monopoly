@@ -61,6 +61,10 @@ import {
   startDemolishVote,
   transferContract,
   transferShares,
+  initiateKickVote,
+  castKickVote,
+  advanceKickVote,
+  resolveKickVote,
 } from '../src/game.js';
 
 const CITY_COUNTRY = new Map([
@@ -1215,3 +1219,73 @@ test('active bankruptcy in a two-player game with assets waits for auction befor
   assert.equal(game.winnerId, 'p1');
   assert.equal(getPlayerShareCount(game, property.id, 'p1'), 4);
 });
+
+test('kick vote triggers bankruptcy when 2 minutes end and all non-current players voted yes', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 2);
+
+  // Lin initiates kick vote against Ada (current turn)
+  initiateKickVote(game, 'p2', 1000);
+
+  assert.ok(game.pendingKickVote);
+  assert.equal(game.pendingKickVote.targetId, 'p1');
+  assert.equal(game.pendingKickVote.votes['p2'], 'yes');
+  assert.equal(game.pendingKickVote.votes['p3'], undefined);
+
+  // Grace votes yes too
+  castKickVote(game, 'p3', 'yes');
+  assert.equal(game.pendingKickVote.votes['p3'], 'yes');
+
+  // Advance timer by 119 seconds -> should not resolve yet
+  let resolved = advanceKickVote(game, 1000 + 119000);
+  assert.equal(resolved, false);
+  assert.ok(game.pendingKickVote);
+
+  // Advance timer by 120 seconds -> resolves successfully
+  resolved = advanceKickVote(game, 1000 + 120000);
+  assert.equal(resolved, true);
+  assert.equal(game.pendingKickVote, null);
+
+  // Ada should be bankrupt
+  assert.equal(game.players[0].bankrupt, true);
+  assert.equal(game.phase, 'auctionPending');
+});
+
+test('kick vote fails if not all non-current players vote yes when timer ends', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+
+  // Lin initiates kick vote against Ada
+  initiateKickVote(game, 'p2', 1000);
+
+  // Grace does not vote
+
+  // Advance timer by 120 seconds -> resolves (fails, does not bankrupt Ada)
+  const resolved = advanceKickVote(game, 1000 + 120000);
+  assert.equal(resolved, true);
+  assert.equal(game.pendingKickVote, null);
+  assert.equal(game.players[0].bankrupt, false);
+  assert.notEqual(game.phase, 'auctionPending');
+});
+
+test('kick vote cancellation and restart', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+
+  // Lin initiates kick vote against Ada (current turn)
+  initiateKickVote(game, 'p2', 1000);
+  assert.ok(game.pendingKickVote);
+  assert.equal(game.pendingKickVote.votes['p2'], 'yes');
+
+  // Lin cancels their vote
+  castKickVote(game, 'p2', 'cancel');
+  assert.equal(game.pendingKickVote, null); // should clear completely
+
+  // Grace initiates a new kick vote later
+  initiateKickVote(game, 'p3', 5000);
+  assert.ok(game.pendingKickVote);
+  assert.equal(game.pendingKickVote.createdAt, 5000);
+  assert.equal(game.pendingKickVote.votes['p3'], 'yes');
+  assert.equal(game.pendingKickVote.votes['p2'], undefined);
+});
+
+

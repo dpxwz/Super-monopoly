@@ -413,6 +413,8 @@ export function endTurn(game) {
     throw new Error(t('error.offerMustResolveFirst'));
   }
 
+  game.pendingKickVote = null;
+
   const currentPlayer = getCurrentPlayer(game);
   if (!currentPlayer.bankrupt && currentPlayer.cash <= 0) {
     game.phase = 'cashRecovery';
@@ -1864,3 +1866,112 @@ function addLog(game, message) {
 function formatAmount(amount) {
   return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
+
+export function initiateKickVote(game, initiatorId, now = Date.now()) {
+  assertPlaying(game);
+  if (game.pendingKickVote) {
+    throw new Error('已有踢出投票在进行中。');
+  }
+
+  const currentPlayer = getCurrentPlayer(game);
+  if (currentPlayer.id === initiatorId) {
+    throw new Error('你不能发起对自己的踢出投票。');
+  }
+
+  const initiator = game.players.find((p) => p.id === initiatorId);
+  if (!initiator || initiator.bankrupt) {
+    throw new Error('无效的投票发起人。');
+  }
+
+  game.pendingKickVote = {
+    targetId: currentPlayer.id,
+    initiatorId: initiatorId,
+    createdAt: now,
+    votes: {
+      [initiatorId]: 'yes',
+    },
+    duration: 120_000, // 2 minutes
+  };
+
+  addLog(game, t('log.kickVoteInitiated', initiator.name, currentPlayer.name));
+  return game.pendingKickVote;
+}
+
+export function castKickVote(game, voterId, stance) {
+  assertPlaying(game);
+  const vote = game.pendingKickVote;
+  if (!vote) {
+    throw new Error('当前没有进行中的踢出投票。');
+  }
+
+  if (voterId === vote.targetId) {
+    throw new Error('被投票玩家不能参与投票。');
+  }
+
+  const voter = game.players.find((p) => p.id === voterId);
+  if (!voter || voter.bankrupt) {
+    throw new Error('无效的投票人。');
+  }
+
+  if (stance === 'yes') {
+    vote.votes[voterId] = 'yes';
+    addLog(game, t('log.kickVoteCast', voter.name));
+  } else if (stance === 'no' || stance === 'cancel') {
+    delete vote.votes[voterId];
+    addLog(game, t('log.kickVoteCancelledByPlayer', voter.name));
+
+    // If no votes remain, cancel the vote entirely
+    const hasAnyYes = Object.values(vote.votes).some((v) => v === 'yes');
+    if (!hasAnyYes) {
+      game.pendingKickVote = null;
+      addLog(game, t('log.kickVoteCancelled'));
+    }
+  }
+
+  return vote;
+}
+
+export function advanceKickVote(game, now = Date.now()) {
+  const vote = game.pendingKickVote;
+  if (!vote) return false;
+
+  const duration = vote.duration ?? 120_000;
+  if (now - vote.createdAt >= duration) {
+    resolveKickVote(game);
+    return true;
+  }
+  return false;
+}
+
+export function resolveKickVote(game) {
+  const vote = game.pendingKickVote;
+  if (!vote) return;
+
+  const targetPlayer = game.players.find((p) => p.id === vote.targetId);
+  if (!targetPlayer || targetPlayer.bankrupt) {
+    game.pendingKickVote = null;
+    return;
+  }
+
+  const otherActivePlayers = game.players.filter((p) => !p.bankrupt && p.id !== targetPlayer.id);
+  const allVotedYes = otherActivePlayers.length > 0 && otherActivePlayers.every((p) => vote.votes[p.id] === 'yes');
+
+  if (allVotedYes) {
+    addLog(game, t('log.kickVoteSuccess', targetPlayer.name));
+
+    // Clear pending votes, offers, and constructions to avoid declareBankruptcy throwing errors
+    game.pendingVote = null;
+    game.pendingOffer = null;
+    game.pendingConstruction = null;
+    if (game.phase === 'vote' || game.phase === 'buildPayment') {
+      game.phase = 'action';
+    }
+
+    declareBankruptcy(game, targetPlayer.id, { type: 'passive', reason: t('bankruptcyReason.kick') || '投票踢出' });
+  } else {
+    addLog(game, t('log.kickVoteFailed', targetPlayer.name));
+  }
+
+  game.pendingKickVote = null;
+}
+

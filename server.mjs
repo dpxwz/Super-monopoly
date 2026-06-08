@@ -34,6 +34,9 @@ import {
   rollAndMove,
   startBuildVote,
   startDemolishVote,
+  initiateKickVote,
+  castKickVote,
+  advanceKickVote,
 } from './src/game.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -187,7 +190,7 @@ export function createRoomStore({
     const participant = clientId ? requireClient(room, clientId) : null;
     if (room.game) {
       const now = Date.now();
-      if (expirePendingTrades(room.game, now).length > 0 || advanceBankruptcyAuction(room.game, now)) {
+      if (expirePendingTrades(room.game, now).length > 0 || advanceBankruptcyAuction(room.game, now) || advanceKickVote(room.game, now)) {
         bump(room);
       }
     }
@@ -225,7 +228,7 @@ export function createRoomStore({
     const payload = action.payload ?? {};
     const game = room.game;
     const now = Date.now();
-    if (expirePendingTrades(game, now).length > 0 || advanceBankruptcyAuction(game, now)) {
+    if (expirePendingTrades(game, now).length > 0 || advanceBankruptcyAuction(game, now) || advanceKickVote(game, now)) {
       bump(room);
     }
     const current = () => getCurrentPlayer(game);
@@ -259,6 +262,18 @@ export function createRoomStore({
         declareBankruptcy(game, player.id, { type: 'active', reason: payload.reason ?? '主动破产' });
         break;
       }
+      case 'initiateKickVote':
+        if (participant.playerId === current().id) {
+          throw new Error('你不能发起对自己的踢出投票。');
+        }
+        initiateKickVote(game, participant.playerId, Date.now());
+        break;
+      case 'castKickVote':
+        if (participant.playerId === current().id) {
+          throw new Error('被投票玩家不能参与投票。');
+        }
+        castKickVote(game, participant.playerId, payload.stance);
+        break;
       case 'buildHouse':
         requireCurrentControl();
         buildHouse(game, String(payload.propertyId ?? ''));
