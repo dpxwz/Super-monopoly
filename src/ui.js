@@ -173,7 +173,7 @@ let game = createGame(['玩家 1', '玩家 2']);
 let gameScreenActive = false;
 let playerTokenPositions = {}; // playerId -> { current: number, target: number, animating: boolean }
 let lastGameInstance = null;
-let lastTurnState = { turn: 0, round: 1 };
+let lastTurnState = null;
 let lanServerUrls = [];
 let actionPending = false;
 let networkSession = {
@@ -1274,6 +1274,7 @@ function render() {
   renderNetworkPanel();
   syncGameScreenFromSession();
   if (!isInGameScreen()) {
+    lastTurnState = null;
     return;
   }
   if (isLanMode() && !isLanStarted()) {
@@ -1284,18 +1285,21 @@ function render() {
       delete playerTokenPositions[key];
     }
     lastGameInstance = null;
+    lastTurnState = null;
     return;
   }
   if (!isLanMode()) {
     expirePendingTrades(game, Date.now());
   }
 
-  if (game.turn !== lastTurnState.turn || game.round !== lastTurnState.round) {
+  if (!lastTurnState) {
+    lastTurnState = {
+      turn: game.turn,
+      round: game.round
+    };
+  } else if (game.turn !== lastTurnState.turn || game.round !== lastTurnState.round) {
     skipAllAnimations();
-    const isTransition = lastGameInstance && lastGameInstance === game;
-    if (isTransition) {
-      playTurnSound(lastTurnState.turn, game.turn);
-    }
+    playTurnSound(lastTurnState.turn, game.turn);
     lastTurnState = {
       turn: game.turn,
       round: game.round
