@@ -145,6 +145,8 @@ const ZH = {
   'error.invalidCashAmount': '交易现金必须是非负有限数字。',
   'error.remainingUsesRange': '合同使用次数必须是正整数。',
   'error.contractNeedsShares': '股份绑定合同必须至少绑定一份股份。',
+  'error.contractDraftParties': '合同草稿必须由交易一方让渡给另一方。',
+  'error.unknownContractType': '未知合同类型：{0}。',
 
   // ── game.js log messages ──
   'log.newGame': '新游戏开始。地块拆分为 10 股，银行持有未售股份。',
@@ -480,6 +482,8 @@ const EN = {
   'error.invalidCashAmount': 'Trade cash must be a finite non-negative number.',
   'error.remainingUsesRange': 'Contract remaining uses must be a positive integer.',
   'error.contractNeedsShares': 'Share-bound contracts must bind at least one share.',
+  'error.contractDraftParties': 'Contract drafts must be granted by one trade party to the other.',
+  'error.unknownContractType': 'Unknown contract type: {0}.',
   'error.bankruptCannotAct': 'Bankrupt players cannot act.',
   'error.cannotRollNow': 'Cannot roll dice in this phase.',
 

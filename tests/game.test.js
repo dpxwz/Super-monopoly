@@ -402,6 +402,77 @@ test('inheritance-bound shares cannot be traded and transfer directly to holder 
   assert.ok(shareLot.shareIds.every((shareId) => !inheritedIds.includes(shareId)));
 });
 
+test('contract drafts in trades only become active when the trade is accepted', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 2);
+
+  const rejected = proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: {
+      contractDrafts: [{
+        type: CONTRACT_TYPES.FREE_PASS,
+        holderId: 'p2',
+        shareRefs: shares(property, 0, 1),
+      }],
+    },
+    request: { cash: 0 },
+    now: 1_000,
+  });
+
+  assert.equal(game.contracts.length, 0);
+  rejectTrade(game, rejected.id);
+  assert.equal(game.contracts.length, 0);
+  assert.deepEqual(property.shares[0].encumbranceContractIds, []);
+
+  const accepted = proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: {
+      contractDrafts: [{
+        type: CONTRACT_TYPES.FREE_PASS,
+        holderId: 'p2',
+        shareRefs: shares(property, 0, 1),
+      }],
+    },
+    request: { cash: 0 },
+    now: 2_000,
+  });
+
+  acceptTrade(game, accepted.id, 2_001);
+
+  assert.equal(game.contracts.length, 1);
+  assert.equal(game.contracts[0].type, CONTRACT_TYPES.FREE_PASS);
+  assert.equal(game.contracts[0].holderId, 'p2');
+  assert.equal(property.shares[0].encumbranceContractIds.includes(game.contracts[0].id), true);
+});
+
+test('accepting a contract draft trade revalidates the grantor assets before creating contracts', () => {
+  const game = createGame(['Ada', 'Lin', 'Grace']);
+  const property = firstProperty(game);
+  grantShares(game, property, 'p1', 0, 1);
+
+  const stale = proposeTrade(game, {
+    fromPlayerId: 'p1',
+    toPlayerId: 'p2',
+    offer: {
+      contractDrafts: [{
+        type: CONTRACT_TYPES.INHERITANCE,
+        holderId: 'p2',
+        shareRefs: shares(property, 0, 1),
+      }],
+    },
+    request: { cash: 0 },
+    now: 1_000,
+  });
+  transferShares(game, 'p1', 'p3', shares(property, 0, 1));
+
+  assert.throws(() => acceptTrade(game, stale.id, 1_001), /不属于|not belong/i);
+  assert.equal(game.contracts.length, 0);
+  assert.deepEqual(property.shares[0].encumbranceContractIds, []);
+});
+
 test('trades can be proposed in any phase, rejected, expired, and only accepted with currently available assets', () => {
   const game = createGame(['Ada', 'Lin', 'Grace']);
   const property = firstProperty(game);
@@ -1325,5 +1396,4 @@ test('kick vote cancellation and restart', () => {
   assert.equal(game.pendingKickVote.votes['p3'], 'yes');
   assert.equal(game.pendingKickVote.votes['p2'], undefined);
 });
-
 

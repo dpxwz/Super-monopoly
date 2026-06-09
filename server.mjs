@@ -10,20 +10,16 @@ try {
 } catch {}
 
 import {
-  CONTRACT_TYPES,
   acceptTrade,
   cancelTrade,
   buildHouse,
   buyCurrentShares,
   castBuildVote,
-  createFreePassContract,
   createGame,
   normalizeStartCash,
   normalizeLapBonus,
   LAP_BONUS,
   START_CASH,
-  createInheritanceContract,
-  createVoteSupportContract,
   declineCurrentShareOffer,
   advanceBankruptcyAuction,
   declareBankruptcy,
@@ -364,8 +360,7 @@ export function createRoomStore({
         break;
       }
       case 'createContract':
-        createContractFromPayload(game, payload, participant);
-        break;
+        throw new Error('局域网合同权限不足：合同必须随交易提交，并在交易接受后才生效。');
       case 'placeAuctionBid':
         placeAuctionBid(game, participant.playerId, Number(payload.amount), Date.now());
         break;
@@ -444,75 +439,6 @@ export function createLanServer({ rootDir = __dirname, store = createRoomStore()
       sendJson(response, error.statusCode ?? 400, { error: error.message ?? String(error) });
     }
   });
-}
-
-function createContractFromPayload(game, payload, participant) {
-  const fromPlayerId = String(payload.tradeFromPlayerId ?? '');
-  const toPlayerId = String(payload.tradeToPlayerId ?? '');
-  if (!fromPlayerId || !toPlayerId) {
-    throw new Error('合同只能在交易过程中创建。');
-  }
-  game.contractCreationContext = { fromPlayerId, toPlayerId };
-  try {
-    return createContractFromPayloadWithContext(game, payload, participant);
-  } finally {
-    game.contractCreationContext = null;
-  }
-}
-
-function createContractFromPayloadWithContext(game, payload, participant) {
-  const type = payload.type;
-  if (type === CONTRACT_TYPES.FREE_PASS) {
-    assertParticipantOwnsShareRefs(game, participant, payload.shareRefs ?? []);
-    return createFreePassContract(game, {
-      holderId: String(payload.holderId ?? ''),
-      shareRefs: payload.shareRefs ?? [],
-    });
-  }
-  if (type === CONTRACT_TYPES.INHERITANCE) {
-    assertParticipantOwnsShareRefs(game, participant, payload.shareRefs ?? []);
-    return createInheritanceContract(game, {
-      holderId: String(payload.holderId ?? ''),
-      shareRefs: payload.shareRefs ?? [],
-    });
-  }
-  if (type === CONTRACT_TYPES.VOTE_SUPPORT) {
-    const obligorId = String(payload.obligorId ?? '');
-    if (obligorId !== participant.playerId) {
-      throw new Error('局域网合同权限不足：只能绑定自己的投票义务。');
-    }
-    return createVoteSupportContract(game, {
-      holderId: String(payload.holderId ?? ''),
-      obligorId,
-      targetSpaceId: String(payload.targetSpaceId ?? ''),
-      voteType: payload.voteType ?? 'build',
-      stance: payload.stance,
-      remainingUses: Number(payload.remainingUses ?? 1),
-    });
-  }
-  throw new Error(`未知合同类型：${type}`);
-}
-
-function assertParticipantOwnsShareRefs(game, participant, shareRefs) {
-  const refs = [...(shareRefs ?? [])];
-  if (refs.length === 0) {
-    throw new Error('局域网合同权限不足：股份绑定合同必须绑定自己的股份。');
-  }
-  for (const shareRef of refs) {
-    const share = findShare(game, shareRef);
-    if (share.ownerId !== participant.playerId) {
-      throw new Error('局域网合同权限不足：只能绑定自己的股份。');
-    }
-  }
-}
-
-function findShare(game, shareRef) {
-  const property = game.board.find((space) => space.id === shareRef?.spaceId && space.type === 'property');
-  const share = property?.shares.find((candidate) => candidate.id === shareRef?.shareId);
-  if (!share) {
-    throw new Error(`找不到股份 ${shareRef?.shareId ?? ''}。`);
-  }
-  return share;
 }
 
 function assertOwnTradeSide(participant, draft, field) {

@@ -8,7 +8,6 @@ import {
   canBuildHouse,
   canDemolishHouse,
   castBuildVote,
-  createFreePassContract,
   createGame,
   LAP_BONUS,
   MAX_LAP_BONUS,
@@ -18,8 +17,6 @@ import {
   normalizeLapBonus,
   normalizeStartCash,
   START_CASH,
-  createInheritanceContract,
-  createVoteSupportContract,
   declineCurrentShareOffer,
   AUCTION_STARTING_BID,
   advanceBankruptcyAuction,
@@ -156,6 +153,7 @@ const elements = {
   tradeRequestAddShare: document.querySelector('#trade-request-add-share'),
   tradeOfferContract: document.querySelector('#trade-offer-contract'),
   tradeRequestContract: document.querySelector('#trade-request-contract'),
+  tradeContractHint: document.querySelector('#trade-contract-hint'),
   tradeNote: document.querySelector('#trade-note'),
   pendingTrades: document.querySelector('#pending-trades'),
   activeTradesList: document.querySelector('#active-trades-list'),
@@ -243,6 +241,10 @@ const tradeShareLineBindings = {
   offer: [],
   request: [],
 };
+let tradeContractDrafts = {
+  offer: [],
+  request: [],
+};
 
 // ── Static HTML translation ──
 // Translates elements with data-i18n, data-i18n-label, data-i18n-placeholder attributes.
@@ -297,12 +299,6 @@ function initLanguageSwitcher() {
   switcher.addEventListener('change', (e) => {
     setLocale(e.target.value);
     applyStaticTranslations();
-    // Re-create only local games. In LAN mode the server remains authoritative;
-    // polling/action snapshots will keep the translated UI on the same game state.
-    if (!isLanMode()) {
-      const names = game.players.map((p) => p.name);
-      game = createGame(names, readStoredGameSettings());
-    }
     render();
   });
 }
@@ -772,6 +768,7 @@ function bindEvents() {
       };
       await runGameAction(() => proposeTrade(game, draft), { type: 'proposeTrade', payload: draft });
       const trade = game.pendingTrades.at(-1);
+      renderTradePanel({ reset: true });
       setMessage(t('msg.tradeProposed', trade?.id ?? ''));
     });
   });
@@ -847,8 +844,14 @@ function bindEvents() {
     }
   });
 
-  elements.tradeFrom.addEventListener('change', renderTradeAssetOptions);
-  elements.tradeTo.addEventListener('change', renderTradeAssetOptions);
+  elements.tradeFrom.addEventListener('change', () => {
+    resetTradeContractDrafts();
+    renderTradeAssetOptions();
+  });
+  elements.tradeTo.addEventListener('change', () => {
+    resetTradeContractDrafts();
+    renderTradeAssetOptions();
+  });
   elements.tradeOfferAddShare?.addEventListener('click', () => addTradeShareLine('offer'));
   elements.tradeRequestAddShare?.addEventListener('click', () => addTradeShareLine('request'));
   elements.tradeOfferSharesList?.addEventListener('click', (event) => {
@@ -880,18 +883,15 @@ function bindEvents() {
         tradeFromPlayerId: fromPlayerId,
         tradeToPlayerId: toPlayerId,
       };
-      game.contractCreationContext = { fromPlayerId, toPlayerId };
-      try {
-        await runGameAction(() => createContractFromPayload(payload), { type: 'createContract', payload });
-      } finally {
-        game.contractCreationContext = null;
+      const grantorId = contractDraftGrantorId(payload);
+      const side = grantorId === fromPlayerId ? 'offer' : grantorId === toPlayerId ? 'request' : null;
+      if (!side) {
+        throw new Error(t('error.contractDraftParties'));
       }
-      const contract = game.contracts.at(-1);
-      const newContractId = contract?.id;
-      setMessage(t('msg.contractCreated', contract ? getContractDisplayName(game, contract) : ''));
+      addTradeContractDraft(side, payload);
+      setMessage(`合同草稿已加入${side === 'offer' ? '给出' : '索要'}内容：${draftContractDisplayName(payload)}`);
       closeContractOverlay();
       render();
-      if (newContractId) selectTradeOfferContract(newContractId);
     });
   });
   elements.contractProperty.addEventListener('change', renderContractFormOptions);
@@ -940,7 +940,7 @@ function bindEvents() {
         setMessage(t('ui.tradeDisabledBankrupt'), true);
         return;
       }
-      renderTradePanel();
+      renderTradePanel({ reset: true });
       openOverlay(elements.tradeOverlay);
       return;
     }
@@ -2152,9 +2152,23 @@ function resetTradeShareLines(side) {
   tradeShareLineBindings[side] = [];
 }
 
-function renderTradePanel() {
+function resetTradeContractDrafts() {
+  tradeContractDrafts = {
+    offer: [],
+    request: [],
+  };
+}
+
+function resetTradeDraftState() {
   resetTradeShareLines('offer');
   resetTradeShareLines('request');
+  resetTradeContractDrafts();
+}
+
+function renderTradePanel({ reset = false } = {}) {
+  if (reset) {
+    resetTradeDraftState();
+  }
   const ownPlayerId = isLanMode() ? networkSession.playerId : null;
   populatePlayerSelect(elements.tradeFrom, ownPlayerId || elements.tradeFrom.value || getCurrentPlayer(game).id);
   if (ownPlayerId) {
@@ -2181,8 +2195,27 @@ function renderTradeAssetOptions() {
   const requestContractIds = selectedContractIds(elements.tradeRequestContract);
   populateContractTradeSelect(elements.tradeOfferContract, elements.tradeFrom.value, offerContractIds);
   populateContractTradeSelect(elements.tradeRequestContract, elements.tradeTo.value, requestContractIds);
+  renderTradeContractDraftHint();
   tradeOfferCashBinding?.refreshBounds();
   tradeRequestCashBinding?.refreshBounds();
+}
+
+function renderTradeContractDraftHint() {
+  if (!elements.tradeContractHint) return;
+  const offerDrafts = tradeContractDrafts.offer.map((draft) => draftContractDisplayName(draft.payload));
+  const requestDrafts = tradeContractDrafts.request.map((draft) => draftContractDisplayName(draft.payload));
+  if (offerDrafts.length === 0 && requestDrafts.length === 0) {
+    elements.tradeContractHint.textContent = t('ui.contractSelectHint');
+    return;
+  }
+  const parts = [];
+  if (offerDrafts.length > 0) {
+    parts.push(`给出新合同：${offerDrafts.join('、')}`);
+  }
+  if (requestDrafts.length > 0) {
+    parts.push(`索要新合同：${requestDrafts.join('、')}`);
+  }
+  elements.tradeContractHint.textContent = parts.join('；');
 }
 
 function getTradeViewerPlayerId() {
@@ -2375,12 +2408,6 @@ function populateContractTradeSelect(select, playerId, selectedIds = []) {
     const option = [...select.options].find((candidate) => candidate.value === contractId);
     if (option) option.selected = true;
   }
-}
-
-function selectTradeOfferContract(contractId) {
-  if (!contractId || !elements.tradeOfferContract) return;
-  const option = [...elements.tradeOfferContract.options].find((candidate) => candidate.value === contractId);
-  if (option) option.selected = true;
 }
 
 function getCurrentAuctionBidderId() {
@@ -2655,24 +2682,67 @@ function buildContractPayloadFromForm() {
   }
   return {
     type,
+    grantorId: ownerId,
     holderId,
     shareRefs,
   };
 }
 
-function createContractFromPayload(payload) {
+function addTradeContractDraft(side, payload) {
+  tradeContractDrafts[side].push({
+    id: `contract-draft-${side}-${Date.now()}-${tradeContractDrafts[side].length}`,
+    payload: cloneContractDraftPayload(payload),
+  });
+}
+
+function cloneContractDraftPayload(payload) {
   if (payload.type === CONTRACT_TYPES.VOTE_SUPPORT) {
-    return createVoteSupportContract(game, {
+    return {
+      type: payload.type,
       holderId: payload.holderId,
       obligorId: payload.obligorId,
       targetSpaceId: payload.targetSpaceId,
+      voteType: payload.voteType ?? 'build',
       stance: payload.stance,
-    });
+      remainingUses: Number(payload.remainingUses ?? 1),
+    };
   }
-  if (payload.type === CONTRACT_TYPES.FREE_PASS) {
-    return createFreePassContract(game, { holderId: payload.holderId, shareRefs: payload.shareRefs });
+  return {
+    type: payload.type,
+    holderId: payload.holderId,
+    shareRefs: (payload.shareRefs ?? []).map((shareRef) => ({
+      spaceId: shareRef.spaceId,
+      shareId: shareRef.shareId,
+    })),
+  };
+}
+
+function contractDraftGrantorId(payload) {
+  if (payload.type === CONTRACT_TYPES.VOTE_SUPPORT) {
+    return payload.obligorId;
   }
-  return createInheritanceContract(game, { holderId: payload.holderId, shareRefs: payload.shareRefs });
+  if (payload.grantorId) {
+    return payload.grantorId;
+  }
+  const firstRef = payload.shareRefs?.[0];
+  const property = game.board.find((space) => space.id === firstRef?.spaceId);
+  return property?.shares.find((share) => share.id === firstRef?.shareId)?.ownerId ?? null;
+}
+
+function draftContractDisplayName(payload) {
+  if (payload.type === CONTRACT_TYPES.VOTE_SUPPORT) {
+    const property = game.board.find((space) => space.id === payload.targetSpaceId);
+    const countryLabel = countryName(property) || t('ui.contractDetail.unknownProperty');
+    return t('contract.name.voteSupport', countryLabel);
+  }
+  const refs = payload.shareRefs ?? [];
+  const property = refs[0] ? game.board.find((space) => space.id === refs[0].spaceId) : null;
+  const propertyLabel = cityName(property) || t('ui.contractDetail.unknownProperty');
+  const percent = refs.length * SHARE_PERCENT;
+  if (payload.type === CONTRACT_TYPES.INHERITANCE) {
+    return t('contract.name.inheritance', propertyLabel, percent);
+  }
+  return t('contract.name.freePass', propertyLabel, percent);
 }
 
 function buildTradeAssets(ownerId, side, cashInput, contractInput) {
@@ -2680,6 +2750,7 @@ function buildTradeAssets(ownerId, side, cashInput, contractInput) {
     cash: Number(cashInput.value || 0),
     shareRefs: collectTradeShareRefs(ownerId, side),
     contractIds: selectedContractIds(contractInput),
+    contractDrafts: tradeContractDrafts[side].map((draft) => cloneContractDraftPayload(draft.payload)),
   };
 }
 
@@ -3078,6 +3149,8 @@ function assetSummary(assets) {
   }
   const names = contractNames(assets.contractIds ?? []);
   if (names.length) parts.push(`合同 ${names.join('、')}`);
+  const draftNames = (assets.contractDrafts ?? []).map(draftContractDisplayName);
+  if (draftNames.length) parts.push(`新合同 ${draftNames.join('、')}`);
   return parts.join(' + ') || '无';
 }
 
@@ -3562,4 +3635,3 @@ function playTurnSound(prevTurnIndex, nextTurnIndex) {
     playAudioTone('turnEnd');
   }
 }
-

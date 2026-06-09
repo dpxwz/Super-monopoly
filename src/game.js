@@ -769,8 +769,8 @@ export function acceptTrade(game, tradeId, now = Date.now()) {
   }
 
   assertTradeAllowed(game, trade.fromPlayerId, trade.toPlayerId);
-  validateTradeLeg(game, trade.fromPlayerId, trade.offer);
-  validateTradeLeg(game, trade.toPlayerId, trade.request);
+  validateTradeLeg(game, trade.fromPlayerId, trade.toPlayerId, trade.offer);
+  validateTradeLeg(game, trade.toPlayerId, trade.fromPlayerId, trade.request);
 
   const wasSuppressingConstruction = game.suppressConstructionRefresh === true;
   if (!wasSuppressingConstruction) {
@@ -1576,10 +1576,11 @@ function normalizeTradeAssets(assets = {}) {
     cash: normalizeCashAmount(assets.cash ?? 0),
     shareRefs: normalizeShareRefs(assets.shareRefs ?? []),
     contractIds: uniqueStrings(assets.contractIds ?? []),
+    contractDrafts: normalizeContractDrafts(assets.contractDrafts ?? []),
   };
 }
 
-function validateTradeLeg(game, ownerId, assets) {
+function validateTradeLeg(game, ownerId, recipientId, assets) {
   const owner = getPlayer(game, ownerId);
   if (assets.cash > 0 && owner.cash < assets.cash) {
     throw new Error(t('error.cashInsufficientForTrade', owner.name));
@@ -1602,9 +1603,13 @@ function validateTradeLeg(game, ownerId, assets) {
       throw new Error(t('error.contractNotActive', contract.id));
     }
   }
+  validateContractDrafts(game, ownerId, recipientId, assets);
 }
 
 function applyTradeLeg(game, fromPlayerId, toPlayerId, assets) {
+  for (const contractDraft of assets.contractDrafts) {
+    createContractFromAcceptedDraft(game, contractDraft, fromPlayerId, toPlayerId);
+  }
   if (assets.cash > 0) {
     const from = getPlayer(game, fromPlayerId);
     const to = getPlayer(game, toPlayerId);
@@ -1617,6 +1622,129 @@ function applyTradeLeg(game, fromPlayerId, toPlayerId, assets) {
   for (const contractId of assets.contractIds) {
     transferContract(game, contractId, toPlayerId);
   }
+}
+
+function normalizeContractDrafts(contractDrafts) {
+  return [...(contractDrafts ?? [])].map((draft) => {
+    const type = draft?.type;
+    if (type === CONTRACT_TYPES.VOTE_SUPPORT) {
+      return {
+        type,
+        holderId: String(draft.holderId ?? ''),
+        obligorId: String(draft.obligorId ?? ''),
+        targetSpaceId: String(draft.targetSpaceId ?? ''),
+        voteType: draft.voteType ?? 'build',
+        stance: draft.stance,
+        remainingUses: Number(draft.remainingUses ?? 1),
+      };
+    }
+    return {
+      type,
+      holderId: String(draft?.holderId ?? ''),
+      shareRefs: normalizeShareRefs(draft?.shareRefs ?? []),
+    };
+  });
+}
+
+function validateContractDrafts(game, ownerId, recipientId, assets) {
+  const seenShareContractKeys = new Set();
+  const seenVoteSupportKeys = new Map();
+  const transferringShareKeys = new Set(assets.shareRefs.map(shareRefKey));
+  for (const draft of assets.contractDrafts) {
+    if (draft.type === CONTRACT_TYPES.FREE_PASS || draft.type === CONTRACT_TYPES.INHERITANCE) {
+      validateShareBoundContractDraft(game, ownerId, recipientId, draft, seenShareContractKeys, transferringShareKeys);
+    } else if (draft.type === CONTRACT_TYPES.VOTE_SUPPORT) {
+      validateVoteSupportContractDraft(game, ownerId, recipientId, draft, seenVoteSupportKeys);
+    } else {
+      throw new Error(t('error.unknownContractType', draft.type ?? ''));
+    }
+  }
+}
+
+function validateShareBoundContractDraft(game, ownerId, recipientId, draft, seenShareContractKeys, transferringShareKeys) {
+  getPlayer(game, draft.holderId);
+  if (draft.holderId !== recipientId) {
+    throw new Error(t('error.contractDraftParties'));
+  }
+  if (draft.shareRefs.length === 0) {
+    throw new Error(t('error.contractNeedsShares'));
+  }
+  for (const shareRef of draft.shareRefs) {
+    const share = getShare(game, shareRef);
+    if (share.ownerId !== ownerId) {
+      throw new Error(t('error.shareNotOwned', share.id, ownerId));
+    }
+    if (draft.type === CONTRACT_TYPES.INHERITANCE && transferringShareKeys.has(shareRefKey(shareRef))) {
+      throw new Error(t('error.inheritanceBound'));
+    }
+    const draftKey = `${shareRefKey(shareRef)}:${draft.type}`;
+    if (seenShareContractKeys.has(draftKey) || findActiveShareContractOfType(game, share, draft.type)) {
+      throw new Error(t('error.duplicateContractType'));
+    }
+    seenShareContractKeys.add(draftKey);
+  }
+}
+
+function validateVoteSupportContractDraft(game, ownerId, recipientId, draft, seenVoteSupportKeys) {
+  getPlayer(game, draft.holderId);
+  getPlayer(game, draft.obligorId);
+  assertProperty(game, draft.targetSpaceId);
+  if (draft.holderId !== recipientId || draft.obligorId !== ownerId) {
+    throw new Error(t('error.contractDraftParties'));
+  }
+  if (!['yes', 'no'].includes(draft.stance)) {
+    throw new Error(t('error.voteSupportStance'));
+  }
+  if (!Number.isInteger(draft.remainingUses) || draft.remainingUses < 1) {
+    throw new Error(t('error.remainingUsesRange'));
+  }
+  const key = `${draft.obligorId}:${draft.targetSpaceId}:${draft.voteType}`;
+  const seenStance = seenVoteSupportKeys.get(key);
+  if (seenStance && seenStance !== draft.stance) {
+    throw new Error(t('error.conflictingVoteSupport'));
+  }
+  seenVoteSupportKeys.set(key, draft.stance);
+  const conflicting = game.contracts.find((contract) => (
+    contract.status === 'active'
+    && contract.type === CONTRACT_TYPES.VOTE_SUPPORT
+    && contract.obligorId === draft.obligorId
+    && contract.targetSpaceId === draft.targetSpaceId
+    && contract.voteType === draft.voteType
+    && contract.remainingUses > 0
+    && contract.stance !== draft.stance
+  ));
+  if (conflicting) {
+    throw new Error(t('error.conflictingVoteSupport'));
+  }
+}
+
+function createContractFromAcceptedDraft(game, draft, fromPlayerId, toPlayerId) {
+  const previousContext = game.contractCreationContext;
+  game.contractCreationContext = { fromPlayerId, toPlayerId };
+  try {
+    if (draft.type === CONTRACT_TYPES.FREE_PASS) {
+      return createFreePassContract(game, { holderId: draft.holderId, shareRefs: draft.shareRefs });
+    }
+    if (draft.type === CONTRACT_TYPES.INHERITANCE) {
+      return createInheritanceContract(game, { holderId: draft.holderId, shareRefs: draft.shareRefs });
+    }
+    if (draft.type === CONTRACT_TYPES.VOTE_SUPPORT) {
+      return createVoteSupportContract(game, draft);
+    }
+    throw new Error(t('error.unknownContractType', draft.type ?? ''));
+  } finally {
+    game.contractCreationContext = previousContext;
+  }
+}
+
+function findActiveShareContractOfType(game, share, type) {
+  return share.encumbranceContractIds
+    .map((contractId) => game.contracts.find((candidate) => candidate.id === contractId))
+    .find((contract) => contract && contract.status === 'active' && contract.type === type);
+}
+
+function shareRefKey(shareRef) {
+  return `${shareRef.spaceId}:${shareRef.shareId}`;
 }
 
 function makeBankShareOffer(property, playerId, bankShares) {
@@ -2029,4 +2157,3 @@ export function resolveKickVote(game) {
 
   game.pendingKickVote = null;
 }
-

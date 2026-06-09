@@ -231,7 +231,8 @@ test('LAN contract creation requires the acting player to bind only their own as
   const host = store.createRoom({ playerName: 'Ada' }).client;
   const guest = store.joinRoom('ROOM1', { playerName: 'Lin' }).client;
   store.startRoom('ROOM1', host.clientId);
-  const targetSpaceId = store.rooms.get('ROOM1').game.board.find((space) => space.type === 'property').id;
+  const game = store.rooms.get('ROOM1').game;
+  const targetSpaceId = game.board.find((space) => space.type === 'property').id;
 
   assert.throws(() => store.applyAction('ROOM1', guest.clientId, {
     type: 'createContract',
@@ -245,6 +246,7 @@ test('LAN contract creation requires the acting player to bind only their own as
       tradeToPlayerId: 'p1',
     },
   }), /权限|义务|自己|own|obligation/i);
+  assert.deepEqual(game.contracts, []);
 });
 
 test('LAN trade timestamps use server time instead of client payload time', () => {
