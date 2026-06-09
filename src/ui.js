@@ -2771,10 +2771,29 @@ function shareholderText(property) {
 }
 
 function shareBarMarkup(property) {
-  const holders = getPropertyShareholders(game, property.id, { includeBank: true });
+  const holders = getPropertyShareholders(game, property.id, { includeBank: true })
+    .sort((left, right) => right.shareCount - left.shareCount || left.playerId.localeCompare(right.playerId));
+  if (!holders.length) return '';
+
+  const legendRows = holders.map((holder) => {
+    const name = holder.playerId === BANK_ID ? t('entity.bank') : playerName(holder.playerId);
+    const color = holderColor(holder.playerId);
+    return `
+      <li class="share-legend-item">
+        <span class="share-legend-swatch" style="background: ${color}"></span>
+        <span class="share-legend-name">${escapeHtml(name)}</span>
+        <span class="share-legend-percent">${holder.percent}%</span>
+      </li>
+    `;
+  }).join('');
+
   return `
-    <div class="share-bar" aria-label="股份分布">
-      ${holders.map((holder) => `<span class="share-segment" title="${escapeHtml(holder.playerId === BANK_ID ? t('entity.bank') : playerName(holder.playerId))} ${holder.percent}%" style="flex: ${holder.shareCount}; background: ${holderColor(holder.playerId)}"></span>`).join('')}
+    <div class="share-distribution">
+      <p class="share-distribution-label">${escapeHtml(t('ui.shareDistribution'))}</p>
+      <div class="share-bar" aria-hidden="true">
+        ${holders.map((holder) => `<span class="share-segment" style="flex: ${holder.shareCount}; background: ${holderColor(holder.playerId)}"></span>`).join('')}
+      </div>
+      <ul class="share-legend">${legendRows}</ul>
     </div>
   `;
 }
@@ -2806,7 +2825,8 @@ function squareDetailMarkup(space, placement) {
   }).join('');
   return `
     <div class="square-detail detail-${placement}" role="tooltip">
-      <p class="square-detail-cost">${escapeHtml(t('ui.houseCostLabel', formatMoney(space.houseCost)))}</p>
+      <p class="square-detail-cost">$${formatMoney(space.price)} · ${escapeHtml(t('ui.houseCostLabel', formatMoney(space.houseCost)))}</p>
+      ${shareBarMarkup(space)}
       <ul class="square-rent-table">${rentRows}</ul>
     </div>
   `;
