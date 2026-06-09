@@ -10,6 +10,12 @@ function expectMarkup(fragment, label = fragment) {
   assert.ok(indexHtml.includes(fragment), `index.html should include ${label}`);
 }
 
+test('lobby exposes adjustable game settings before start', () => {
+  expectMarkup('id="game-settings-panel"', 'game settings panel');
+  expectMarkup('id="start-cash"', 'starting cash input');
+  expectMarkup('id="start-cash-range"', 'starting cash range input');
+});
+
 test('lobby and play screens are split with a dedicated game screen container', () => {
   expectMarkup('id="lobby-screen"', 'lobby screen');
   expectMarkup('class="lobby-screen hero"', 'lobby screen class');

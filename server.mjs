@@ -17,6 +17,8 @@ import {
   castBuildVote,
   createFreePassContract,
   createGame,
+  normalizeStartCash,
+  START_CASH,
   createInheritanceContract,
   createVoteSupportContract,
   declineCurrentShareOffer,
@@ -51,7 +53,7 @@ export function createRoomStore({
 } = {}) {
   const rooms = new Map();
 
-  function createRoom({ playerName } = {}) {
+  function createRoom({ playerName, settings } = {}) {
     const roomCode = uniqueRoomCode(rooms, createCode);
     const clientId = createClientId();
     const host = makeParticipant(clientId, 0, playerName, true);
@@ -62,6 +64,9 @@ export function createRoomStore({
         started: false,
         hostPlayerId: host.playerId,
         players: [host],
+        settings: {
+          startCash: normalizeStartCash(settings?.startCash ?? START_CASH),
+        },
       },
       game: null,
       chat: [],
@@ -111,8 +116,24 @@ export function createRoomStore({
       throw new Error('至少需要 2 名玩家才能开始局域网游戏。');
     }
 
-    room.game = createGame(room.lobby.players.map((player) => player.name));
+    room.game = createGameFromLobby(room);
     room.lobby.started = true;
+    bump(room);
+    return withClient(room, participant);
+  }
+
+  function updateLobbySettings(rawCode, clientId, { settings } = {}) {
+    const room = requireRoom(rawCode);
+    const participant = requireClient(room, clientId);
+    if (!participant.isHost) {
+      throw new Error('只有房主可以修改游戏设置。');
+    }
+    if (room.lobby.started) {
+      throw new Error('游戏已经开始，不能修改设置。');
+    }
+    if (settings?.startCash !== undefined) {
+      room.lobby.settings.startCash = normalizeStartCash(settings.startCash);
+    }
     bump(room);
     return withClient(room, participant);
   }
@@ -336,7 +357,7 @@ export function createRoomStore({
         if (!participant.isHost) {
           throw new Error('只有房主可以重开局域网游戏。');
         }
-        room.game = createGame(room.lobby.players.map((player) => player.name));
+        room.game = createGameFromLobby(room);
         break;
       default:
         throw new Error(`未知联机动作：${action.type}`);
@@ -367,6 +388,7 @@ export function createRoomStore({
     createRoom,
     joinRoom,
     startRoom,
+    updateLobbySettings,
     returnToLobby,
     resumeRoom,
     leaveRoom,
@@ -505,6 +527,13 @@ function findTrade(game, tradeId) {
   return trade;
 }
 
+function createGameFromLobby(room) {
+  return createGame(
+    room.lobby.players.map((player) => player.name),
+    { startCash: room.lobby.settings?.startCash },
+  );
+}
+
 function withClient(room, participant) {
   return {
     roomCode: room.roomCode,
@@ -521,6 +550,9 @@ function publicRoom(room) {
       started: room.lobby.started,
       hostPlayerId: room.lobby.hostPlayerId,
       players: room.lobby.players.map(publicPlayer),
+      settings: {
+        startCash: normalizeStartCash(room.lobby.settings?.startCash),
+      },
     },
     chat: room.chat.map(publicChatMessage),
     game: room.game,
@@ -650,7 +682,7 @@ function matchApiRoute(pathname) {
   if (pathname === '/api/rooms') {
     return { name: 'rooms' };
   }
-  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|kick|return-lobby|state|actions|chat))?$/);
+  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|kick|return-lobby|settings|state|actions|chat))?$/);
   if (!match) {
     return null;
   }
@@ -687,6 +719,14 @@ async function handleApiRoute({ request, response, route, store, url }) {
   if (route.name === 'return-lobby' && request.method === 'POST') {
     const body = await readJsonBody(request);
     sendJson(response, 200, store.returnToLobby(route.roomCode, body.clientId));
+    return;
+  }
+
+  if (route.name === 'settings' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, store.updateLobbySettings(route.roomCode, body.clientId, {
+      settings: body.settings,
+    }));
     return;
   }
 

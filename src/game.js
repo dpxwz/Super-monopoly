@@ -1,6 +1,16 @@
 import { t, cityName, countryName } from './i18n.js';
 
+export const MIN_START_CASH = 1000;
+export const MAX_START_CASH = 4000;
 export const START_CASH = 1500;
+
+export function normalizeStartCash(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return START_CASH;
+  }
+  return Math.min(MAX_START_CASH, Math.max(MIN_START_CASH, Math.round(parsed)));
+}
 export const LAP_BONUS = 200;
 export const START_BONUS = LAP_BONUS;
 export const MAX_PLAYERS = 4;
@@ -246,9 +256,10 @@ const PROPERTY_SPACES = CITY_GROUPS.flatMap((group, groupIndex) => (
 
 export const BOARD_SPACES = [START_SPACE, ...PROPERTY_SPACES];
 
-export function createGame(playerNames) {
+export function createGame(playerNames, { startCash = START_CASH } = {}) {
   const names = normalizePlayerNames(playerNames);
   const board = cloneBoard(BOARD_SPACES);
+  const normalizedStartCash = normalizeStartCash(startCash);
 
   return {
     status: 'playing',
@@ -269,10 +280,13 @@ export function createGame(playerNames) {
     nextContractId: 1,
     nextVoteId: 1,
     nextConstructionId: 1,
+    settings: {
+      startCash: normalizedStartCash,
+    },
     players: names.map((name, index) => ({
       id: `p${index + 1}`,
       name,
-      cash: START_CASH,
+      cash: normalizedStartCash,
       position: 0,
       properties: [],
       bankrupt: false,

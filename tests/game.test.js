@@ -22,6 +22,10 @@ import {
   castBuildVote,
   createFreePassContract,
   createGame,
+  MAX_START_CASH,
+  MIN_START_CASH,
+  normalizeStartCash,
+  START_CASH,
   createInheritanceContract,
   createVoteSupportContract,
   advanceBankruptcyAuction,
@@ -160,6 +164,20 @@ test('board keeps a 44-space 12 by 12 perimeter with ordinary property pricing o
     assert.ok(!('diceMultiplier' in space));
     assert.ok(!('mortgageValue' in space));
   }
+});
+
+test('normalizeStartCash clamps starting cash to the supported lobby range', () => {
+  assert.equal(normalizeStartCash(1500), 1500);
+  assert.equal(normalizeStartCash(999), MIN_START_CASH);
+  assert.equal(normalizeStartCash(4001), MAX_START_CASH);
+  assert.equal(normalizeStartCash('oops'), START_CASH);
+});
+
+test('createGame accepts a custom starting cash setting', () => {
+  const game = createGame(['Ada', 'Lin'], { startCash: 2500 });
+  assert.equal(game.settings.startCash, 2500);
+  assert.equal(game.players[0].cash, 2500);
+  assert.equal(game.players[1].cash, 2500);
 });
 
 test('createGame initializes ten unsold bank shares on every property and no player holdings', () => {

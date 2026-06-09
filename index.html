@@ -66,6 +66,17 @@
               <input id="room-code" name="room-code" maxlength="8" placeholder="例如 ABC12" />
             </label>
           </div>
+          <section id="game-settings-panel" class="game-settings-panel" aria-labelledby="game-settings-heading">
+            <h3 id="game-settings-heading">游戏设置</h3>
+            <label class="range-input-label" for="start-cash">
+              每个玩家起始资金
+              <span class="range-input-group">
+                <input id="start-cash" name="start-cash" type="number" min="1000" max="4000" step="100" value="1500" />
+                <input id="start-cash-range" type="range" min="1000" max="4000" step="100" value="1500" aria-label="每个玩家起始资金滑条" />
+              </span>
+            </label>
+            <p id="game-settings-hint" class="muted compact-hint">范围 $1000–$4000，默认 $1500。</p>
+          </section>
           <div class="setup-actions">
             <button class="primary-button" type="submit" data-i18n="ui.startGame">开始 / 加入</button>
           </div>

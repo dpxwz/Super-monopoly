@@ -10,6 +10,10 @@ import {
   castBuildVote,
   createFreePassContract,
   createGame,
+  MAX_START_CASH,
+  MIN_START_CASH,
+  normalizeStartCash,
+  START_CASH,
   createInheritanceContract,
   createVoteSupportContract,
   declineCurrentShareOffer,
@@ -84,6 +88,10 @@ const elements = {
   lanStartButton: document.querySelector('#lan-start-button'),
   lanLeaveButton: document.querySelector('#lan-leave-button'),
   lanReturnLobbyButton: document.querySelector('#lan-return-lobby-button'),
+  gameSettingsPanel: document.querySelector('#game-settings-panel'),
+  startCashInput: document.querySelector('#start-cash'),
+  startCashRange: document.querySelector('#start-cash-range'),
+  gameSettingsHint: document.querySelector('#game-settings-hint'),
   board: document.querySelector('#board'),
   currentPlayer: document.querySelector('#current-player'),
   currentSpace: document.querySelector('#current-space'),
@@ -279,7 +287,7 @@ function initLanguageSwitcher() {
     // polling/action snapshots will keep the translated UI on the same game state.
     if (!isLanMode()) {
       const names = game.players.map((p) => p.name);
-      game = createGame(names);
+      game = createGame(names, { startCash: game.settings?.startCash ?? readLocalStartCash() });
     }
     render();
   });
@@ -296,7 +304,96 @@ refreshLanServerInfo()
   .catch(() => {});
 resumeStoredLanSession();
 
+function readLocalStartCash() {
+  return normalizeStartCash(elements.startCashInput?.value);
+}
+
+function syncStartCashInputs(value) {
+  const normalized = normalizeStartCash(value);
+  if (elements.startCashInput) elements.startCashInput.value = String(normalized);
+  if (elements.startCashRange) elements.startCashRange.value = String(normalized);
+}
+
+function canEditGameSettings() {
+  if (!isLanMode()) {
+    return true;
+  }
+  return networkSession.isHost && !networkSession.room?.lobby?.started;
+}
+
+function renderGameSettings() {
+  if (!elements.gameSettingsPanel) return;
+
+  const isLan = isLanMode();
+  const room = networkSession.room;
+  const canEdit = canEditGameSettings();
+  const startCash = isLan
+    ? normalizeStartCash(room?.lobby?.settings?.startCash)
+    : readLocalStartCash();
+
+  if (document.activeElement !== elements.startCashInput
+    && document.activeElement !== elements.startCashRange) {
+    syncStartCashInputs(startCash);
+  }
+
+  if (elements.startCashInput) elements.startCashInput.disabled = !canEdit;
+  if (elements.startCashRange) elements.startCashRange.disabled = !canEdit;
+
+  if (elements.gameSettingsHint) {
+    if (isLan && room?.lobby?.started) {
+      elements.gameSettingsHint.textContent = '游戏进行中，设置已锁定。';
+    } else if (isLan && !networkSession.isHost) {
+      elements.gameSettingsHint.textContent = '联机模式下仅房主可调整设置。';
+    } else {
+      elements.gameSettingsHint.textContent = `范围 $${MIN_START_CASH}–$${MAX_START_CASH}，默认 $${START_CASH}。`;
+    }
+  }
+}
+
+async function updateLanStartCash(startCash) {
+  if (!networkSession.roomCode || !networkSession.clientId) {
+    throw new Error('还没有加入局域网房间。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/settings`, {
+    method: 'POST',
+    body: {
+      clientId: networkSession.clientId,
+      settings: { startCash: normalizeStartCash(startCash) },
+    },
+  });
+  applyLanSnapshot(snapshot);
+}
+
+let startCashPersistTimer = null;
+
+function scheduleLanStartCashPersist(value) {
+  if (!isLanMode() || !canEditGameSettings()) {
+    return;
+  }
+  window.clearTimeout(startCashPersistTimer);
+  startCashPersistTimer = window.setTimeout(() => {
+    safeAction(() => updateLanStartCash(value));
+  }, 250);
+}
+
+function bindStartCashControls() {
+  elements.startCashInput?.addEventListener('input', () => {
+    syncStartCashInputs(elements.startCashInput.value);
+  });
+  elements.startCashInput?.addEventListener('change', () => {
+    const normalized = normalizeStartCash(elements.startCashInput.value);
+    syncStartCashInputs(normalized);
+    scheduleLanStartCashPersist(normalized);
+  });
+  elements.startCashRange?.addEventListener('input', () => {
+    const normalized = normalizeStartCash(elements.startCashRange.value);
+    syncStartCashInputs(normalized);
+    scheduleLanStartCashPersist(normalized);
+  });
+}
+
 function bindEvents() {
+  bindStartCashControls();
   elements.modeRadios.forEach((radio) => radio.addEventListener('change', renderModeFields));
 
   elements.setupForm.addEventListener('submit', (event) => {
@@ -309,7 +406,9 @@ function bindEvents() {
         const names = [...formData.getAll('player')]
           .map((name) => String(name).trim())
           .filter(Boolean);
-        game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2']);
+        game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2'], {
+          startCash: readLocalStartCash(),
+        });
         enterGameScreen();
         setMessage(t('msg.newGameStarted'));
         return;
@@ -467,7 +566,7 @@ function bindEvents() {
         await sendLanAction('restart');
       } else {
         const names = game.players.map((player) => player.name);
-        game = createGame(names);
+        game = createGame(names, { startCash: game.settings?.startCash ?? START_CASH });
       }
       setMessage(t('msg.restartedWithPlayers'));
     });
@@ -870,7 +969,10 @@ async function createLanRoom(playerName) {
   await refreshLanServerInfo();
   const snapshot = await apiRequest('/api/rooms', {
     method: 'POST',
-    body: { playerName },
+    body: {
+      playerName,
+      settings: { startCash: readLocalStartCash() },
+    },
   });
   applyLanSnapshot(snapshot);
   rememberRoomInUrl();
@@ -1067,7 +1169,9 @@ function applyLanSnapshot(snapshot) {
     game = result.game;
   } else if (!networkSession.room?.lobby?.started) {
     const names = networkSession.room?.lobby?.players?.map((player) => player.name) ?? [];
-    game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2']);
+    game = createGame(names.length >= 2 ? names : ['玩家 1', '玩家 2'], {
+      startCash: networkSession.room?.lobby?.settings?.startCash,
+    });
   }
   saveStoredLanSession(window.sessionStorage, networkSession);
   return true;
@@ -1154,6 +1258,7 @@ function renderModeFields() {
     elements.lanPlayerName.value = firstPlayer?.value ?? '玩家 1';
   }
   renderNetworkPanel();
+  renderGameSettings();
 }
 
 function isLanRemovedFromRoomError(error) {
@@ -1168,6 +1273,7 @@ function renderNetworkPanel() {
   if (!isLanMode()) {
     elements.networkPanel.hidden = true;
     elements.networkStatus.textContent = '本地模式';
+    renderGameSettings();
     return;
   }
 
@@ -1212,6 +1318,7 @@ function renderNetworkPanel() {
   elements.lanStartButton.disabled = actionPending || players.length < 2;
   elements.lanLeaveButton.disabled = actionPending;
   renderInteractionLocks();
+  renderGameSettings();
 }
 
 
