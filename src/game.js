@@ -1,4 +1,4 @@
-import { t, cityName, countryName } from './i18n.js';
+import { t, cityName, countryName, startDescription } from './i18n.js';
 
 export const MIN_START_CASH = 1000;
 export const MAX_START_CASH = 4000;
@@ -11,8 +11,22 @@ export function normalizeStartCash(value) {
   }
   return Math.min(MAX_START_CASH, Math.max(MIN_START_CASH, Math.round(parsed)));
 }
+export const MIN_LAP_BONUS = 100;
+export const MAX_LAP_BONUS = 1000;
 export const LAP_BONUS = 200;
 export const START_BONUS = LAP_BONUS;
+
+export function normalizeLapBonus(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return LAP_BONUS;
+  }
+  return Math.min(MAX_LAP_BONUS, Math.max(MIN_LAP_BONUS, Math.round(parsed)));
+}
+
+export function getLapBonus(game) {
+  return normalizeLapBonus(game.settings?.lapBonus);
+}
 export const MAX_PLAYERS = 4;
 export const BOARD_SIDE_LENGTH = 12;
 
@@ -256,10 +270,22 @@ const PROPERTY_SPACES = CITY_GROUPS.flatMap((group, groupIndex) => (
 
 export const BOARD_SPACES = [START_SPACE, ...PROPERTY_SPACES];
 
-export function createGame(playerNames, { startCash = START_CASH } = {}) {
+function applyStartSpaceBonus(board, lapBonus) {
+  const startSpace = board.find((space) => space.type === 'start');
+  if (!startSpace) {
+    return;
+  }
+  startSpace.bonus = lapBonus;
+  startSpace.description = startDescription(lapBonus);
+  startSpace.descriptionEn = `Pass or land here to receive $${lapBonus}`;
+}
+
+export function createGame(playerNames, { startCash = START_CASH, lapBonus = LAP_BONUS } = {}) {
   const names = normalizePlayerNames(playerNames);
   const board = cloneBoard(BOARD_SPACES);
   const normalizedStartCash = normalizeStartCash(startCash);
+  const normalizedLapBonus = normalizeLapBonus(lapBonus);
+  applyStartSpaceBonus(board, normalizedLapBonus);
 
   return {
     status: 'playing',
@@ -282,6 +308,7 @@ export function createGame(playerNames, { startCash = START_CASH } = {}) {
     nextConstructionId: 1,
     settings: {
       startCash: normalizedStartCash,
+      lapBonus: normalizedLapBonus,
     },
     players: names.map((name, index) => ({
       id: `p${index + 1}`,
@@ -1296,8 +1323,9 @@ function movePlayerBy(game, player, steps, payLapBonus) {
   player.position = ((total % boardLength) + boardLength) % boardLength;
 
   if (payLapBonus && steps > 0 && total >= boardLength) {
-    adjustCash(game, player, LAP_BONUS);
-    addLog(game, t('log.lapBonus', player.name, LAP_BONUS));
+    const lapBonus = getLapBonus(game);
+    adjustCash(game, player, lapBonus);
+    addLog(game, t('log.lapBonus', player.name, lapBonus));
   }
 }
 

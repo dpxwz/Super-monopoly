@@ -14,6 +14,8 @@ test('lobby exposes adjustable game settings before start', () => {
   expectMarkup('id="game-settings-panel"', 'game settings panel');
   expectMarkup('id="start-cash"', 'starting cash input');
   expectMarkup('id="start-cash-range"', 'starting cash range input');
+  expectMarkup('id="lap-bonus"', 'lap bonus input');
+  expectMarkup('id="lap-bonus-range"', 'lap bonus range input');
 });
 
 test('lobby and play screens are split with a dedicated game screen container', () => {

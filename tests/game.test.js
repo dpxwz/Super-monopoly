@@ -8,6 +8,9 @@ import {
   CONTRACT_TYPES,
   DIRECT_BUILD_SHARES,
   LAP_BONUS,
+  MAX_LAP_BONUS,
+  MIN_LAP_BONUS,
+  normalizeLapBonus,
   MAJOR_SHAREHOLDER_SHARES,
   SHARE_PERCENT,
   SHARES_PER_PROPERTY,
@@ -178,6 +181,23 @@ test('createGame accepts a custom starting cash setting', () => {
   assert.equal(game.settings.startCash, 2500);
   assert.equal(game.players[0].cash, 2500);
   assert.equal(game.players[1].cash, 2500);
+});
+
+test('normalizeLapBonus clamps pass-start rewards to the supported lobby range', () => {
+  assert.equal(normalizeLapBonus(200), 200);
+  assert.equal(normalizeLapBonus(99), MIN_LAP_BONUS);
+  assert.equal(normalizeLapBonus(1001), MAX_LAP_BONUS);
+  assert.equal(normalizeLapBonus('oops'), LAP_BONUS);
+});
+
+test('createGame applies a custom lap bonus when players pass start', () => {
+  const game = createGame(['Ada', 'Lin'], { lapBonus: 500 });
+  assert.equal(game.settings.lapBonus, 500);
+  assert.equal(game.board[0].bonus, 500);
+
+  game.players[0].position = 32;
+  rollAndMove(game, [6, 6]);
+  assert.equal(game.players[0].cash, 1500 + 500);
 });
 
 test('createGame initializes ten unsold bank shares on every property and no player holdings', () => {

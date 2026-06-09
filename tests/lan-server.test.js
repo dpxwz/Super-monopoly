@@ -41,10 +41,14 @@ async function requestJson(baseUrl, path, { method = 'GET', body } = {}) {
   return data;
 }
 
-test('LAN room store honors starting cash settings when creating a room', () => {
+test('LAN room store honors lobby settings when creating a room', () => {
   const store = deterministicStore();
-  const created = store.createRoom({ playerName: 'Ada', settings: { startCash: 2800 } });
+  const created = store.createRoom({
+    playerName: 'Ada',
+    settings: { startCash: 2800, lapBonus: 600 },
+  });
   assert.equal(created.room.lobby.settings.startCash, 2800);
+  assert.equal(created.room.lobby.settings.lapBonus, 600);
 });
 
 test('LAN room store lets only the host change lobby settings before start', () => {
@@ -59,13 +63,18 @@ test('LAN room store lets only the host change lobby settings before start', () 
     /房主|host/i,
   );
 
-  const updated = store.updateLobbySettings('ROOM1', created.client.clientId, { settings: { startCash: 3000 } });
+  const updated = store.updateLobbySettings('ROOM1', created.client.clientId, {
+    settings: { startCash: 3000, lapBonus: 450 },
+  });
   assert.equal(updated.room.lobby.settings.startCash, 3000);
+  assert.equal(updated.room.lobby.settings.lapBonus, 450);
 
   const started = store.startRoom('ROOM1', created.client.clientId);
   assert.equal(started.room.game.settings.startCash, 3000);
+  assert.equal(started.room.game.settings.lapBonus, 450);
   assert.equal(started.room.game.players[0].cash, 3000);
   assert.equal(started.room.game.players[1].cash, 3000);
+  assert.equal(started.room.game.board[0].bonus, 450);
 
   assert.throws(
     () => store.updateLobbySettings('ROOM1', created.client.clientId, { settings: { startCash: 2000 } }),

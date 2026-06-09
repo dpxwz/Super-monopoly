@@ -18,6 +18,8 @@ import {
   createFreePassContract,
   createGame,
   normalizeStartCash,
+  normalizeLapBonus,
+  LAP_BONUS,
   START_CASH,
   createInheritanceContract,
   createVoteSupportContract,
@@ -66,6 +68,7 @@ export function createRoomStore({
         players: [host],
         settings: {
           startCash: normalizeStartCash(settings?.startCash ?? START_CASH),
+          lapBonus: normalizeLapBonus(settings?.lapBonus ?? LAP_BONUS),
         },
       },
       game: null,
@@ -133,6 +136,9 @@ export function createRoomStore({
     }
     if (settings?.startCash !== undefined) {
       room.lobby.settings.startCash = normalizeStartCash(settings.startCash);
+    }
+    if (settings?.lapBonus !== undefined) {
+      room.lobby.settings.lapBonus = normalizeLapBonus(settings.lapBonus);
     }
     bump(room);
     return withClient(room, participant);
@@ -530,7 +536,10 @@ function findTrade(game, tradeId) {
 function createGameFromLobby(room) {
   return createGame(
     room.lobby.players.map((player) => player.name),
-    { startCash: room.lobby.settings?.startCash },
+    {
+      startCash: room.lobby.settings?.startCash,
+      lapBonus: room.lobby.settings?.lapBonus,
+    },
   );
 }
 
@@ -552,6 +561,7 @@ function publicRoom(room) {
       players: room.lobby.players.map(publicPlayer),
       settings: {
         startCash: normalizeStartCash(room.lobby.settings?.startCash),
+        lapBonus: normalizeLapBonus(room.lobby.settings?.lapBonus),
       },
     },
     chat: room.chat.map(publicChatMessage),
