@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Entry UI Preview - Room Hub</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0c1110;
+        --surface: #131917;
+        --surface-2: #1d2420;
+        --line: #314037;
+        --ink: #f3f7ee;
+        --muted: #a6b2aa;
+        --red: #ed6a5f;
+        --blue: #62a7df;
+        --green: #74bf75;
+        --gold: #e0b95f;
+        --violet: #a17bd6;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px),
+          linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px),
+          linear-gradient(135deg, #0c1110, #151612 62%, #0d1213);
+        background-size: 36px 36px, 36px 36px, auto;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      input,
+      select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0 12px;
+        color: var(--ink);
+        background: rgba(0,0,0,.24);
+      }
+
+      button {
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0 14px;
+        color: var(--ink);
+        background: #1d2420;
+        font-weight: 740;
+      }
+
+      .primary {
+        color: #10140d;
+        border-color: #f2c96c;
+        background: var(--gold);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: .86rem;
+        font-weight: 700;
+      }
+
+      input[type="range"] {
+        accent-color: var(--blue);
+      }
+
+      .shell {
+        width: min(1360px, calc(100vw - 32px));
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 18px 0;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 14px;
+      }
+
+      .bar,
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(19,25,23,.94);
+      }
+
+      .bar {
+        min-height: 62px;
+        padding: 0 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .logo {
+        width: 36px;
+        aspect-ratio: 1;
+        border-radius: 8px;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 3px;
+      }
+
+      .logo span { border-radius: 3px; }
+
+      .brand h1 {
+        font-size: 1.1rem;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 10px;
+        color: var(--muted);
+        background: rgba(0,0,0,.18);
+        font-size: .82rem;
+        white-space: nowrap;
+      }
+
+      .mode-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .mode-card {
+        padding: 14px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .mode-card.is-active {
+        border-color: #e0b95f;
+        background: #211f15;
+      }
+
+      .mode-icon {
+        width: 34px;
+        aspect-ratio: 1;
+        border-radius: 8px;
+        background: var(--green);
+      }
+
+      .main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr);
+        gap: 14px;
+        min-height: 0;
+      }
+
+      .roster {
+        padding: 14px;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 14px;
+      }
+
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .seats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .seat {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #101512;
+        padding: 12px;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .token {
+        width: 38px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        color: #0c1110;
+        font-weight: 880;
+      }
+
+      .setup-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .room-panel {
+        padding: 14px;
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+
+      .code-block {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #101512;
+        padding: 14px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .code-block strong {
+        font-size: 2.35rem;
+      }
+
+      .setting-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .range-pair {
+        display: grid;
+        grid-template-columns: 96px 1fr;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .map-strip {
+        min-height: 154px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        display: grid;
+        grid-template-columns: repeat(11, 1fr);
+        gap: 5px;
+        background: #0e1411;
+      }
+
+      .plot {
+        border-radius: 5px;
+        border: 1px solid rgba(255,255,255,.1);
+        min-height: 34px;
+      }
+
+      .plot:nth-child(5n) { background: var(--red); }
+      .plot:nth-child(5n+1) { background: var(--blue); }
+      .plot:nth-child(5n+2) { background: var(--green); }
+      .plot:nth-child(5n+3) { background: var(--gold); }
+      .plot:nth-child(5n+4) { background: var(--violet); }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+      }
+
+      @media (max-width: 960px) {
+        .mode-row,
+        .main,
+        .seats,
+        .setup-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 620px) {
+        .shell {
+          width: min(100vw - 20px, 1360px);
+        }
+
+        .bar,
+        .section-head,
+        .actions {
+          align-items: stretch;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="bar">
+        <div class="brand">
+          <span class="logo" aria-hidden="true">
+            <span style="background:var(--red)"></span>
+            <span style="background:var(--blue)"></span>
+            <span style="background:var(--green)"></span>
+            <span style="background:var(--gold)"></span>
+          </span>
+          <div>
+            <h1>Super Monopoly</h1>
+            <span class="badge">进入游戏</span>
+          </div>
+        </div>
+        <span class="badge">局域网大厅</span>
+      </header>
+
+      <section class="mode-row" aria-label="开始模式">
+        <button class="panel mode-card is-active" type="button">
+          <span class="mode-icon" style="background:var(--green)"></span>
+          <strong>本地模式</strong>
+          <span class="badge">已选</span>
+        </button>
+        <button class="panel mode-card" type="button">
+          <span class="mode-icon" style="background:var(--blue)"></span>
+          <strong>创建房间</strong>
+          <span class="badge">LAN</span>
+        </button>
+        <button class="panel mode-card" type="button">
+          <span class="mode-icon" style="background:var(--gold)"></span>
+          <strong>加入房间</strong>
+          <span class="badge">CODE</span>
+        </button>
+      </section>
+
+      <section class="main">
+        <form class="panel roster">
+          <div class="section-head">
+            <h2>玩家</h2>
+            <span class="badge">2 至 4 人</span>
+          </div>
+          <div class="seats">
+            <label class="seat">
+              <span class="token" style="background:var(--red)">1</span>
+              <span>玩家 1<input value="玩家 1" /></span>
+            </label>
+            <label class="seat">
+              <span class="token" style="background:var(--blue)">2</span>
+              <span>玩家 2<input value="玩家 2" /></span>
+            </label>
+            <label class="seat">
+              <span class="token" style="background:var(--green)">3</span>
+              <span>玩家 3<input placeholder="可选" /></span>
+            </label>
+            <label class="seat">
+              <span class="token" style="background:var(--gold)">4</span>
+              <span>玩家 4<input placeholder="可选" /></span>
+            </label>
+          </div>
+
+          <div class="setup-grid">
+            <label>你的联机昵称<input value="玩家 1" /></label>
+            <label>房间号<input placeholder="ABCDE" /></label>
+            <label>起始资金<span class="range-pair"><input value="$1500" /><input type="range" min="1000" max="4000" value="1500" /></span></label>
+            <label>起点奖励<span class="range-pair"><input value="$200" /><input type="range" min="100" max="1000" value="200" /></span></label>
+          </div>
+
+          <div class="map-strip" aria-hidden="true">
+            <span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span>
+            <span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span>
+            <span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span>
+            <span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span><span class="plot"></span>
+          </div>
+
+          <div class="actions">
+            <button type="button">退出联机</button>
+            <button class="primary" type="button">开始 / 加入</button>
+          </div>
+        </form>
+
+        <aside class="panel room-panel">
+          <div class="section-head">
+            <h2>房间</h2>
+            <span class="badge">等待开始</span>
+          </div>
+          <div class="code-block">
+            <div>
+              <span class="badge">房间号</span>
+              <strong>ABCDE</strong>
+            </div>
+            <button type="button">复制</button>
+          </div>
+          <label>加入链接<input readonly value="http://10.0.0.181:4173/?room=ABCDE" /></label>
+          <div class="setting-stack">
+            <div class="seat">
+              <span class="token" style="background:var(--red)">1</span>
+              <strong>玩家 1 · 房主</strong>
+            </div>
+            <div class="seat">
+              <span class="token" style="background:var(--blue)">2</span>
+              <strong>玩家 2 · 你</strong>
+            </div>
+            <div class="seat">
+              <span class="token" style="background:var(--green)">3</span>
+              <strong>空位</strong>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

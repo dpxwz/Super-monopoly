@@ -18,92 +18,221 @@
 
       <div class="screen-stack">
       <section class="lobby-screen hero" id="lobby-screen" aria-labelledby="game-title">
-        <div class="hero-copy-block">
-          <p class="eyebrow" data-i18n="ui.eyebrow">local web board game</p>
-          <h1 id="game-title">Super Monopoly</h1>
-          <p class="hero-copy" data-i18n="ui.heroCopy">12×12 外圈地图，第一格是起始格。所有城市拆成 10 股，玩家可按股买入、交易、分租、签合同，并用主要持股人与投票规则建设地产。</p>
+        <header class="entry-topbar">
+          <div class="entry-brand">
+            <span class="entry-mark" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </span>
+            <div>
+              <p class="eyebrow" data-i18n="ui.eyebrow">local web board game</p>
+              <h1 id="game-title">Super Monopoly</h1>
+            </div>
+          </div>
+          <div class="entry-topbar-meta" aria-label="游戏概要">
+            <span class="badge" data-i18n="ui.entrySpaces">44 格</span>
+            <span class="badge" data-i18n="ui.entrySharesPerCity">10 股 / 城市</span>
+            <span class="badge" data-i18n="ui.entryModesMeta">本地 / LAN</span>
+          </div>
+        </header>
+
+        <div class="entry-layout">
+          <form id="setup-form" class="setup-card entry-setup-panel">
+            <fieldset class="mode-selector entry-mode-selector" aria-label="开始模式">
+              <legend data-i18n="ui.entryModeLegend">选择模式</legend>
+              <label class="mode-option">
+                <input type="radio" name="game-mode" value="local" checked />
+                <span><strong data-i18n="ui.modeLocalTitle">本地模式</strong><small data-i18n="ui.modeLocalDescription">同一台设备上轮流操作。</small></span>
+              </label>
+              <label class="mode-option">
+                <input type="radio" name="game-mode" value="lan-host" />
+                <span><strong data-i18n="ui.modeHostTitle">创建房间</strong><small data-i18n="ui.modeHostDescription">生成同网络加入链接。</small></span>
+              </label>
+              <label class="mode-option">
+                <input type="radio" name="game-mode" value="lan-join" />
+                <span><strong data-i18n="ui.modeJoinTitle">加入房间</strong><small data-i18n="ui.modeJoinDescription">输入房主给你的房间号。</small></span>
+              </label>
+            </fieldset>
+
+            <section class="entry-section" aria-labelledby="entry-player-heading">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow" data-i18n="ui.entryPlayersEyebrow">players</p>
+                  <h2 id="entry-player-heading" data-i18n="ui.players">开始游戏</h2>
+                </div>
+                <span class="badge">2 - 4</span>
+              </div>
+              <div class="setup-player-grid entry-seat-grid">
+                <label class="entry-seat" data-local-player-field data-i18n-label="ui.player1">
+                  <span class="player-avatar" style="--dot: var(--player-1)">1</span>
+                  玩家 1
+                  <input name="player" value="玩家 1" maxlength="14" />
+                </label>
+                <label class="entry-seat" data-local-player-field data-i18n-label="ui.player2">
+                  <span class="player-avatar" style="--dot: var(--player-2)">2</span>
+                  玩家 2
+                  <input name="player" value="玩家 2" maxlength="14" />
+                </label>
+                <label class="entry-seat" data-local-player-field data-i18n-label="ui.player3">
+                  <span class="player-avatar" style="--dot: var(--player-3)">3</span>
+                  玩家 3，可选
+                  <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.placeholderSkip" />
+                </label>
+                <label class="entry-seat" data-local-player-field data-i18n-label="ui.player4">
+                  <span class="player-avatar" style="--dot: var(--player-4)">4</span>
+                  玩家 4，可选
+                  <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.placeholderSkip" />
+                </label>
+                <label class="entry-seat" data-lan-only data-i18n-label="ui.lanPlayerName">
+                  <span class="player-avatar" style="--dot: var(--accent)">?</span>
+                  你的联机昵称
+                  <input id="lan-player-name" name="lan-player-name" value="玩家 1" maxlength="14" />
+                </label>
+                <label class="entry-seat" data-lan-only="join" data-i18n-label="ui.roomCode">
+                  <span class="player-avatar" style="--dot: var(--success)">#</span>
+                  房间号
+                  <input id="room-code" name="room-code" maxlength="8" placeholder="例如 ABC12" data-i18n-placeholder="ui.roomCodePlaceholder" />
+                </label>
+              </div>
+              <fieldset id="lan-avatar-color-field" class="avatar-color-picker entry-avatar-picker" data-lan-only>
+                <legend data-i18n="ui.avatarColor">头像颜色</legend>
+                <div class="avatar-color-options">
+                  <label class="avatar-color-option">
+                    <input type="radio" name="avatar-color" value="red" />
+                    <span class="avatar-color-swatch" style="--choice-color: var(--player-1)"></span>
+                    <span data-i18n="ui.avatarColor.red">红色</span>
+                  </label>
+                  <label class="avatar-color-option">
+                    <input type="radio" name="avatar-color" value="blue" />
+                    <span class="avatar-color-swatch" style="--choice-color: var(--player-2)"></span>
+                    <span data-i18n="ui.avatarColor.blue">蓝色</span>
+                  </label>
+                  <label class="avatar-color-option">
+                    <input type="radio" name="avatar-color" value="green" />
+                    <span class="avatar-color-swatch" style="--choice-color: var(--player-3)"></span>
+                    <span data-i18n="ui.avatarColor.green">绿色</span>
+                  </label>
+                  <label class="avatar-color-option">
+                    <input type="radio" name="avatar-color" value="yellow" />
+                    <span class="avatar-color-swatch" style="--choice-color: var(--player-4)"></span>
+                    <span data-i18n="ui.avatarColor.yellow">黄色</span>
+                  </label>
+                </div>
+                <p class="muted compact-hint" data-i18n="ui.avatarColorAutoHint">不选择时会自动分配一个未占用颜色。</p>
+              </fieldset>
+            </section>
+
+            <section id="game-settings-panel" class="game-settings-panel entry-settings-panel" aria-labelledby="game-settings-heading">
+              <div class="section-heading compact">
+                <div>
+                  <p class="eyebrow" data-i18n="ui.entrySettingsEyebrow">settings</p>
+                  <h3 id="game-settings-heading" data-i18n="ui.gameSettings">游戏设置</h3>
+                </div>
+                <span class="badge">$1500 / $200</span>
+              </div>
+              <div class="entry-settings-grid">
+                <label class="range-input-label" for="start-cash" data-i18n-label="ui.startCashLabel">
+                  每个玩家起始资金
+                  <span class="range-input-group">
+                    <input id="start-cash" name="start-cash" type="number" min="1000" max="4000" step="100" value="1500" />
+                    <input id="start-cash-range" type="range" min="1000" max="4000" step="100" value="1500" aria-label="每个玩家起始资金滑条" />
+                  </span>
+                </label>
+                <label class="range-input-label" for="lap-bonus" data-i18n-label="ui.lapBonusLabel">
+                  经过起始格奖励
+                  <span class="range-input-group">
+                    <input id="lap-bonus" name="lap-bonus" type="number" min="100" max="1000" step="100" value="200" aria-label="经过起始格奖励数值" />
+                    <input id="lap-bonus-range" type="range" min="100" max="1000" step="100" value="200" aria-label="经过起始格奖励滑条" />
+                  </span>
+                </label>
+              </div>
+              <p id="game-settings-hint" class="muted compact-hint">起始资金 $1000–$4000（默认 $1500）；经过起始格奖励 $100–$1000（默认 $200）。</p>
+            </section>
+
+            <div class="setup-actions entry-actions">
+              <button class="primary-button" type="submit" data-i18n="ui.startGame">开始 / 加入</button>
+            </div>
+          </form>
+
+          <aside class="entry-room-column" aria-label="房间和地图概览">
+            <section id="network-panel" class="network-panel entry-network-panel" hidden>
+              <div class="card-topline">
+                <strong><span data-i18n="ui.networkRoomLabel">局域网房间</span> <span id="network-room-code">--</span></strong>
+                <span id="network-status" class="badge">本地模式</span>
+              </div>
+              <label data-i18n-label="ui.joinLink">
+                加入链接
+                <input id="network-share-url" readonly value="" />
+              </label>
+              <div id="network-avatar-color" class="network-avatar-color"></div>
+              <div id="network-players" class="network-players"></div>
+              <p id="network-hint" class="muted" data-i18n="ui.networkInitialHint">创建或加入房间后会显示联机状态。</p>
+              <div class="action-row">
+                <button id="lan-start-button" type="button" data-i18n="ui.lanStartGame">开始联机游戏</button>
+                <button id="lan-leave-button" type="button" class="ghost-button" data-i18n="ui.lanLeaveGame">退出联机</button>
+              </div>
+            </section>
+
+            <section class="entry-board-panel panel-section" aria-label="地图预览">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow" data-i18n="ui.entryBoardEyebrow">board</p>
+                  <h2 data-i18n="ui.boardPreview">地图预览</h2>
+                </div>
+                <span class="badge">12 x 12</span>
+              </div>
+              <div class="entry-mini-board" aria-hidden="true">
+                <span class="entry-plot start" style="grid-column:1;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:2;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:3;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:4;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:5;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:6;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:7;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:8;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:9;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:10;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:11;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:1"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:2"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:3"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:4"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:5"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:6"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:7"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:8"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:9"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:10"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:11"></span>
+                <span class="entry-plot" style="grid-column:12;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:11;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:10;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:9;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:8;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:7;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:6;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:5;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:4;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:3;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:2;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:12"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:11"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:10"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:9"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:8"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:7"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:6"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:5"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:4"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:3"></span>
+                <span class="entry-plot" style="grid-column:1;grid-row:2"></span>
+                <div class="entry-board-center">
+                  <strong>Super Monopoly</strong>
+                  <span class="badge" data-i18n="ui.boardCenterMeta">起始格 + 43 城市</span>
+                </div>
+              </div>
+            </section>
+          </aside>
         </div>
-        <form id="setup-form" class="setup-card">
-          <h2 data-i18n="ui.players">开始游戏</h2>
-          <fieldset class="mode-selector" aria-label="开始模式">
-            <legend>选择模式</legend>
-            <label class="mode-option">
-              <input type="radio" name="game-mode" value="local" checked />
-              <span><strong>本地模式</strong><small>同一台设备上轮流操作。</small></span>
-            </label>
-            <label class="mode-option">
-              <input type="radio" name="game-mode" value="lan-host" />
-              <span><strong>局域网联机：创建房间</strong><small>启动本机服务器后，其他设备用链接加入。</small></span>
-            </label>
-            <label class="mode-option">
-              <input type="radio" name="game-mode" value="lan-join" />
-              <span><strong>局域网联机：加入房间</strong><small>输入房主给你的房间号。</small></span>
-            </label>
-          </fieldset>
-          <div class="setup-player-grid">
-            <label data-local-player-field data-i18n-label="ui.player1">
-              玩家 1
-              <input name="player" value="玩家 1" maxlength="14" />
-            </label>
-            <label data-local-player-field data-i18n-label="ui.player2">
-              玩家 2
-              <input name="player" value="玩家 2" maxlength="14" />
-            </label>
-            <label data-local-player-field data-i18n-label="ui.player3">
-              玩家 3，可选
-              <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.playerPlaceholder" />
-            </label>
-            <label data-local-player-field data-i18n-label="ui.player4">
-              玩家 4，可选
-              <input name="player" maxlength="14" placeholder="留空则不加入" data-i18n-placeholder="ui.playerPlaceholder" />
-            </label>
-            <label data-lan-only>
-              你的联机昵称
-              <input id="lan-player-name" name="lan-player-name" value="玩家 1" maxlength="14" />
-            </label>
-            <label data-lan-only="join">
-              房间号
-              <input id="room-code" name="room-code" maxlength="8" placeholder="例如 ABC12" />
-            </label>
-          </div>
-          <section id="game-settings-panel" class="game-settings-panel" aria-labelledby="game-settings-heading">
-            <h3 id="game-settings-heading">游戏设置</h3>
-            <label class="range-input-label" for="start-cash">
-              每个玩家起始资金
-              <span class="range-input-group">
-                <input id="start-cash" name="start-cash" type="number" min="1000" max="4000" step="100" value="1500" />
-                <input id="start-cash-range" type="range" min="1000" max="4000" step="100" value="1500" aria-label="每个玩家起始资金滑条" />
-              </span>
-            </label>
-            <label class="range-input-label" for="lap-bonus">
-              经过起始格奖励
-              <span class="range-input-group">
-                <input id="lap-bonus" name="lap-bonus" type="number" min="100" max="1000" step="100" value="200" />
-                <input id="lap-bonus-range" type="range" min="100" max="1000" step="100" value="200" aria-label="经过起始格奖励滑条" />
-              </span>
-            </label>
-            <p id="game-settings-hint" class="muted compact-hint">起始资金 $1000–$4000（默认 $1500）；经过起始格奖励 $100–$1000（默认 $200）。</p>
-          </section>
-          <div class="setup-actions">
-            <button class="primary-button" type="submit" data-i18n="ui.startGame">开始 / 加入</button>
-          </div>
-          <section id="network-panel" class="network-panel" hidden>
-            <div class="card-topline">
-              <strong>局域网房间 <span id="network-room-code">--</span></strong>
-              <span id="network-status" class="badge">本地模式</span>
-            </div>
-            <label>
-              加入链接
-              <input id="network-share-url" readonly value="" />
-            </label>
-            <div id="network-players" class="network-players"></div>
-            <p id="network-hint" class="muted">创建或加入房间后会显示联机状态。</p>
-            <div class="action-row">
-              <button id="lan-start-button" type="button">开始联机游戏</button>
-              <button id="lan-leave-button" type="button" class="ghost-button">退出联机</button>
-            </div>
-          </section>
-        </form>
       </section>
 
       <section class="game-screen game-layout" id="game-screen" aria-label="游戏区" aria-hidden="true">

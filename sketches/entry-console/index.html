@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Entry UI Preview - Console</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #11100d;
+        --surface: #181713;
+        --surface-2: #222019;
+        --line: #363126;
+        --line-strong: #5c5037;
+        --ink: #f5f0e4;
+        --muted: #a9a192;
+        --red: #e35b50;
+        --blue: #5ca7d8;
+        --green: #62b36f;
+        --gold: #d7a84a;
+        --violet: #9a78d0;
+        --radius: 8px;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+          linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+          var(--bg);
+        background-size: 44px 44px;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button {
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius);
+        min-height: 42px;
+        padding: 0 14px;
+        color: var(--ink);
+        background: #2a2418;
+        font-weight: 720;
+      }
+
+      .primary {
+        border-color: #f0c765;
+        color: #18120a;
+        background: var(--gold);
+      }
+
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 11px 12px;
+        color: var(--ink);
+        background: #12100c;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 0.86rem;
+        font-weight: 680;
+      }
+
+      .shell {
+        width: min(1420px, calc(100vw - 32px));
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 18px 0;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 14px;
+      }
+
+      .topbar {
+        min-height: 58px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(24, 23, 19, .94);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .mark {
+        width: 34px;
+        aspect-ratio: 1;
+        border-radius: 7px;
+        background:
+          linear-gradient(90deg, var(--red) 0 25%, var(--blue) 25% 50%, var(--green) 50% 75%, var(--gold) 75%);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 1.1rem;
+      }
+
+      .status-strip {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .badge {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: var(--muted);
+        background: #14120e;
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr) 360px;
+        gap: 14px;
+        min-height: 0;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(24, 23, 19, .95);
+      }
+
+      .mode-rail {
+        padding: 12px;
+        display: grid;
+        align-content: start;
+        gap: 10px;
+      }
+
+      .mode {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 13px;
+        background: #13110d;
+      }
+
+      .mode.is-active {
+        border-color: #d7a84a;
+        background: #241d10;
+      }
+
+      .mode strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .mode small {
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 14px;
+        min-width: 0;
+      }
+
+      .section {
+        padding: 14px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .section-head h2 {
+        font-size: 1rem;
+      }
+
+      .player-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .player-slot {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 12px;
+        background: #13110d;
+        display: grid;
+        gap: 10px;
+      }
+
+      .avatar {
+        width: 30px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        color: #11100d;
+        font-weight: 850;
+      }
+
+      .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .range-row {
+        display: grid;
+        grid-template-columns: 90px 1fr;
+        gap: 8px;
+        align-items: center;
+      }
+
+      input[type="range"] {
+        accent-color: var(--gold);
+      }
+
+      .board-panel {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .mini-board {
+        min-height: 360px;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius);
+        padding: 12px;
+        background: #0f0e0b;
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        grid-template-rows: repeat(12, 1fr);
+        gap: 3px;
+      }
+
+      .cell {
+        min-width: 0;
+        min-height: 0;
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 4px;
+        background: #211f19;
+      }
+
+      .cell:nth-child(5n) { background: #51302a; }
+      .cell:nth-child(5n+1) { background: #244353; }
+      .cell:nth-child(5n+2) { background: #2f4931; }
+      .cell:nth-child(5n+3) { background: #544525; }
+      .cell:nth-child(5n+4) { background: #40355a; }
+
+      .board-center {
+        grid-column: 3 / 11;
+        grid-row: 3 / 11;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #181713;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 18px;
+      }
+
+      .board-center strong {
+        display: block;
+        font-size: 1.3rem;
+      }
+
+      .room-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .room-line {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 10px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--muted);
+        background: #13110d;
+      }
+
+      .action-bar {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        padding: 14px;
+      }
+
+      @media (max-width: 1080px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .mode-rail {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .player-grid,
+        .settings-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 620px) {
+        .shell {
+          width: min(100vw - 20px, 1420px);
+        }
+
+        .topbar,
+        .section-head,
+        .action-bar {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .mode-rail,
+        .player-grid,
+        .settings-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <div>
+            <h1>Super Monopoly</h1>
+            <span class="badge">进入游戏</span>
+          </div>
+        </div>
+        <div class="status-strip">
+          <span class="badge">本地</span>
+          <span class="badge">局域网</span>
+          <span class="badge">4 人上限</span>
+        </div>
+      </header>
+
+      <section class="layout" aria-label="进入游戏控制台">
+        <nav class="panel mode-rail" aria-label="开始模式">
+          <button class="mode is-active" type="button">
+            <strong>本地对局</strong>
+            <small>同屏轮流操作</small>
+          </button>
+          <button class="mode" type="button">
+            <strong>创建房间</strong>
+            <small>生成局域网链接</small>
+          </button>
+          <button class="mode" type="button">
+            <strong>加入房间</strong>
+            <small>输入房间号</small>
+          </button>
+        </nav>
+
+        <section class="workspace">
+          <section class="panel section">
+            <div class="section-head">
+              <h2>玩家席位</h2>
+              <span class="badge">2/4 已启用</span>
+            </div>
+            <div class="player-grid">
+              <div class="player-slot">
+                <span class="avatar" style="background: var(--red)">1</span>
+                <label>名称<input value="玩家 1" /></label>
+              </div>
+              <div class="player-slot">
+                <span class="avatar" style="background: var(--blue)">2</span>
+                <label>名称<input value="玩家 2" /></label>
+              </div>
+              <div class="player-slot">
+                <span class="avatar" style="background: var(--green)">3</span>
+                <label>名称<input placeholder="可选" /></label>
+              </div>
+              <div class="player-slot">
+                <span class="avatar" style="background: var(--gold)">4</span>
+                <label>名称<input placeholder="可选" /></label>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel section">
+            <div class="section-head">
+              <h2>游戏设置</h2>
+              <span class="badge">$1500 / $200</span>
+            </div>
+            <div class="settings-grid">
+              <label>
+                起始资金
+                <span class="range-row"><input value="$1500" /><input type="range" value="1500" min="1000" max="4000" /></span>
+              </label>
+              <label>
+                起点奖励
+                <span class="range-row"><input value="$200" /><input type="range" value="200" min="100" max="1000" /></span>
+              </label>
+              <label>
+                语言
+                <select><option>中文</option><option>English</option></select>
+              </label>
+            </div>
+          </section>
+
+          <section class="panel section">
+            <div class="section-head">
+              <h2>局域网</h2>
+              <span class="badge">未创建</span>
+            </div>
+            <div class="settings-grid">
+              <label>昵称<input value="玩家 1" /></label>
+              <label>房间号<input placeholder="ABCDE" /></label>
+              <label>加入链接<input readonly value="http://127.0.0.1:4173/?room=ABCDE" /></label>
+            </div>
+          </section>
+
+          <div class="panel action-bar">
+            <button type="button">重置</button>
+            <button class="primary" type="button">开始 / 加入</button>
+          </div>
+        </section>
+
+        <aside class="panel board-panel" aria-label="地图预览">
+          <div class="section-head">
+            <h2>棋盘状态</h2>
+            <span class="badge">44 格外圈</span>
+          </div>
+          <div class="mini-board" aria-hidden="true">
+            <span class="cell" style="grid-column:1;grid-row:1"></span>
+            <span class="cell" style="grid-column:2;grid-row:1"></span>
+            <span class="cell" style="grid-column:3;grid-row:1"></span>
+            <span class="cell" style="grid-column:4;grid-row:1"></span>
+            <span class="cell" style="grid-column:5;grid-row:1"></span>
+            <span class="cell" style="grid-column:6;grid-row:1"></span>
+            <span class="cell" style="grid-column:7;grid-row:1"></span>
+            <span class="cell" style="grid-column:8;grid-row:1"></span>
+            <span class="cell" style="grid-column:9;grid-row:1"></span>
+            <span class="cell" style="grid-column:10;grid-row:1"></span>
+            <span class="cell" style="grid-column:11;grid-row:1"></span>
+            <span class="cell" style="grid-column:12;grid-row:1"></span>
+            <span class="cell" style="grid-column:12;grid-row:2"></span>
+            <span class="cell" style="grid-column:12;grid-row:3"></span>
+            <span class="cell" style="grid-column:12;grid-row:4"></span>
+            <span class="cell" style="grid-column:12;grid-row:5"></span>
+            <span class="cell" style="grid-column:12;grid-row:6"></span>
+            <span class="cell" style="grid-column:12;grid-row:7"></span>
+            <span class="cell" style="grid-column:12;grid-row:8"></span>
+            <span class="cell" style="grid-column:12;grid-row:9"></span>
+            <span class="cell" style="grid-column:12;grid-row:10"></span>
+            <span class="cell" style="grid-column:12;grid-row:11"></span>
+            <span class="cell" style="grid-column:12;grid-row:12"></span>
+            <span class="cell" style="grid-column:11;grid-row:12"></span>
+            <span class="cell" style="grid-column:10;grid-row:12"></span>
+            <span class="cell" style="grid-column:9;grid-row:12"></span>
+            <span class="cell" style="grid-column:8;grid-row:12"></span>
+            <span class="cell" style="grid-column:7;grid-row:12"></span>
+            <span class="cell" style="grid-column:6;grid-row:12"></span>
+            <span class="cell" style="grid-column:5;grid-row:12"></span>
+            <span class="cell" style="grid-column:4;grid-row:12"></span>
+            <span class="cell" style="grid-column:3;grid-row:12"></span>
+            <span class="cell" style="grid-column:2;grid-row:12"></span>
+            <span class="cell" style="grid-column:1;grid-row:12"></span>
+            <span class="cell" style="grid-column:1;grid-row:11"></span>
+            <span class="cell" style="grid-column:1;grid-row:10"></span>
+            <span class="cell" style="grid-column:1;grid-row:9"></span>
+            <span class="cell" style="grid-column:1;grid-row:8"></span>
+            <span class="cell" style="grid-column:1;grid-row:7"></span>
+            <span class="cell" style="grid-column:1;grid-row:6"></span>
+            <span class="cell" style="grid-column:1;grid-row:5"></span>
+            <span class="cell" style="grid-column:1;grid-row:4"></span>
+            <span class="cell" style="grid-column:1;grid-row:3"></span>
+            <span class="cell" style="grid-column:1;grid-row:2"></span>
+            <div class="board-center">
+              <div>
+                <strong>12 x 12</strong>
+                <span class="badge">起始格 + 43 城市</span>
+              </div>
+            </div>
+          </div>
+          <div class="room-list">
+            <div class="room-line"><span>起始资金</span><strong>$1500</strong></div>
+            <div class="room-line"><span>起点奖励</span><strong>$200</strong></div>
+            <div class="room-line"><span>模式</span><strong>本地</strong></div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>

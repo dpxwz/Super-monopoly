@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Entry UI Preview - Tabletop</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --table: #1b1712;
+        --felt: #17352b;
+        --felt-2: #21483a;
+        --wood: #6d4a2c;
+        --wood-dark: #2c2117;
+        --ink: #fff7e8;
+        --muted: #c0b49e;
+        --line: rgba(255,255,255,.16);
+        --red: #ef665f;
+        --blue: #5fa6de;
+        --green: #70c17a;
+        --gold: #e0b65d;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(90deg, rgba(0,0,0,.2), transparent 16%, transparent 84%, rgba(0,0,0,.2)),
+          repeating-linear-gradient(90deg, #3a281b 0 36px, #2d2118 36px 72px);
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        min-height: 42px;
+        padding: 0 12px;
+        color: var(--ink);
+        background: rgba(0,0,0,.28);
+      }
+
+      button {
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0 14px;
+        color: var(--ink);
+        background: rgba(255,255,255,.08);
+        font-weight: 760;
+      }
+
+      .primary {
+        color: #1c140b;
+        border-color: #ffd477;
+        background: var(--gold);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .screen {
+        min-height: 100vh;
+        padding: 18px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 380px;
+        gap: 18px;
+      }
+
+      .table {
+        position: relative;
+        min-height: calc(100vh - 36px);
+        border: 10px solid var(--wood);
+        border-radius: 8px;
+        background:
+          linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px),
+          linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+          var(--felt);
+        background-size: 34px 34px;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 28px 90px rgba(0,0,0,.45);
+        overflow: hidden;
+      }
+
+      .title-strip {
+        position: absolute;
+        inset: 18px 18px auto;
+        min-height: 58px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: rgba(20,28,22,.86);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .title-strip h1 {
+        font-size: 1.15rem;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        min-height: 30px;
+        padding: 0 10px;
+        color: var(--muted);
+        background: rgba(0,0,0,.22);
+        font-size: .82rem;
+        white-space: nowrap;
+      }
+
+      .board {
+        position: absolute;
+        inset: 104px 180px 118px;
+        min-height: 430px;
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        grid-template-rows: repeat(12, 1fr);
+        gap: 4px;
+      }
+
+      .tile {
+        border: 1px solid rgba(255,255,255,.14);
+        border-radius: 5px;
+        background: #e8ddc3;
+        box-shadow: inset 0 -8px rgba(0,0,0,.08);
+      }
+
+      .tile:nth-child(5n) { border-top: 6px solid var(--red); }
+      .tile:nth-child(5n+1) { border-top: 6px solid var(--blue); }
+      .tile:nth-child(5n+2) { border-top: 6px solid var(--green); }
+      .tile:nth-child(5n+3) { border-top: 6px solid var(--gold); }
+      .tile:nth-child(5n+4) { border-top: 6px solid #9e7bd1; }
+
+      .center {
+        grid-column: 3 / 11;
+        grid-row: 3 / 11;
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 8px;
+        background: rgba(19,48,39,.96);
+        display: grid;
+        place-items: center;
+        text-align: center;
+      }
+
+      .center h2 {
+        font-size: 1.6rem;
+        margin-bottom: 10px;
+      }
+
+      .seat {
+        position: absolute;
+        width: 154px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        background: rgba(22,18,13,.9);
+        display: grid;
+        gap: 8px;
+      }
+
+      .seat strong {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 20px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+      }
+
+      .seat-1 { left: 26px; top: 116px; }
+      .seat-2 { right: 26px; top: 116px; }
+      .seat-3 { left: 26px; bottom: 132px; }
+      .seat-4 { right: 26px; bottom: 132px; }
+
+      .bottom-dock {
+        position: absolute;
+        inset: auto 18px 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(20,16,11,.94);
+        padding: 12px;
+        display: grid;
+        grid-template-columns: 280px 1fr auto;
+        gap: 12px;
+        align-items: end;
+      }
+
+      .segmented {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+
+      .segmented button {
+        min-height: 38px;
+      }
+
+      .segmented .active {
+        color: #1c140b;
+        background: var(--gold);
+        border-color: #ffd477;
+      }
+
+      .dock-fields {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .side-panel {
+        border: 1px solid rgba(255,255,255,.14);
+        border-radius: 8px;
+        background: rgba(28,20,12,.94);
+        padding: 14px;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 14px;
+      }
+
+      .side-panel h2 {
+        font-size: 1.05rem;
+      }
+
+      .room-code {
+        border: 1px dashed rgba(255,255,255,.26);
+        border-radius: 8px;
+        padding: 16px;
+        display: grid;
+        gap: 10px;
+        background: rgba(0,0,0,.18);
+      }
+
+      .room-code strong {
+        font-size: 2rem;
+      }
+
+      .settings {
+        display: grid;
+        gap: 10px;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: .86rem;
+        font-weight: 700;
+      }
+
+      input[type="range"] {
+        accent-color: var(--green);
+      }
+
+      @media (max-width: 1120px) {
+        .screen {
+          grid-template-columns: 1fr;
+        }
+
+        .table {
+          min-height: 780px;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .screen {
+          padding: 10px;
+        }
+
+        .board {
+          inset: 104px 16px 272px;
+        }
+
+        .seat {
+          position: static;
+          width: auto;
+        }
+
+        .table {
+          display: grid;
+          gap: 10px;
+          padding: 100px 12px 252px;
+        }
+
+        .bottom-dock {
+          grid-template-columns: 1fr;
+        }
+
+        .dock-fields {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="screen">
+      <section class="table" aria-label="桌面进入游戏界面">
+        <header class="title-strip">
+          <div>
+            <h1>Super Monopoly</h1>
+            <span class="badge">进入游戏</span>
+          </div>
+          <span class="badge">本地对局</span>
+        </header>
+
+        <section class="seat seat-1">
+          <strong><span class="dot" style="background:var(--red)"></span>玩家 1</strong>
+          <input value="玩家 1" />
+        </section>
+        <section class="seat seat-2">
+          <strong><span class="dot" style="background:var(--blue)"></span>玩家 2</strong>
+          <input value="玩家 2" />
+        </section>
+        <section class="seat seat-3">
+          <strong><span class="dot" style="background:var(--green)"></span>玩家 3</strong>
+          <input placeholder="可选" />
+        </section>
+        <section class="seat seat-4">
+          <strong><span class="dot" style="background:var(--gold)"></span>玩家 4</strong>
+          <input placeholder="可选" />
+        </section>
+
+        <div class="board" aria-hidden="true">
+          <span class="tile" style="grid-column:1;grid-row:1"></span>
+          <span class="tile" style="grid-column:2;grid-row:1"></span>
+          <span class="tile" style="grid-column:3;grid-row:1"></span>
+          <span class="tile" style="grid-column:4;grid-row:1"></span>
+          <span class="tile" style="grid-column:5;grid-row:1"></span>
+          <span class="tile" style="grid-column:6;grid-row:1"></span>
+          <span class="tile" style="grid-column:7;grid-row:1"></span>
+          <span class="tile" style="grid-column:8;grid-row:1"></span>
+          <span class="tile" style="grid-column:9;grid-row:1"></span>
+          <span class="tile" style="grid-column:10;grid-row:1"></span>
+          <span class="tile" style="grid-column:11;grid-row:1"></span>
+          <span class="tile" style="grid-column:12;grid-row:1"></span>
+          <span class="tile" style="grid-column:12;grid-row:2"></span>
+          <span class="tile" style="grid-column:12;grid-row:3"></span>
+          <span class="tile" style="grid-column:12;grid-row:4"></span>
+          <span class="tile" style="grid-column:12;grid-row:5"></span>
+          <span class="tile" style="grid-column:12;grid-row:6"></span>
+          <span class="tile" style="grid-column:12;grid-row:7"></span>
+          <span class="tile" style="grid-column:12;grid-row:8"></span>
+          <span class="tile" style="grid-column:12;grid-row:9"></span>
+          <span class="tile" style="grid-column:12;grid-row:10"></span>
+          <span class="tile" style="grid-column:12;grid-row:11"></span>
+          <span class="tile" style="grid-column:12;grid-row:12"></span>
+          <span class="tile" style="grid-column:11;grid-row:12"></span>
+          <span class="tile" style="grid-column:10;grid-row:12"></span>
+          <span class="tile" style="grid-column:9;grid-row:12"></span>
+          <span class="tile" style="grid-column:8;grid-row:12"></span>
+          <span class="tile" style="grid-column:7;grid-row:12"></span>
+          <span class="tile" style="grid-column:6;grid-row:12"></span>
+          <span class="tile" style="grid-column:5;grid-row:12"></span>
+          <span class="tile" style="grid-column:4;grid-row:12"></span>
+          <span class="tile" style="grid-column:3;grid-row:12"></span>
+          <span class="tile" style="grid-column:2;grid-row:12"></span>
+          <span class="tile" style="grid-column:1;grid-row:12"></span>
+          <span class="tile" style="grid-column:1;grid-row:11"></span>
+          <span class="tile" style="grid-column:1;grid-row:10"></span>
+          <span class="tile" style="grid-column:1;grid-row:9"></span>
+          <span class="tile" style="grid-column:1;grid-row:8"></span>
+          <span class="tile" style="grid-column:1;grid-row:7"></span>
+          <span class="tile" style="grid-column:1;grid-row:6"></span>
+          <span class="tile" style="grid-column:1;grid-row:5"></span>
+          <span class="tile" style="grid-column:1;grid-row:4"></span>
+          <span class="tile" style="grid-column:1;grid-row:3"></span>
+          <span class="tile" style="grid-column:1;grid-row:2"></span>
+          <div class="center">
+            <div>
+              <h2>起始资金 $1500</h2>
+              <span class="badge">经过起始格 +$200</span>
+            </div>
+          </div>
+        </div>
+
+        <form class="bottom-dock">
+          <div class="segmented" aria-label="模式">
+            <button class="active" type="button">本地</button>
+            <button type="button">创建</button>
+            <button type="button">加入</button>
+          </div>
+          <div class="dock-fields">
+            <label>昵称<input value="玩家 1" /></label>
+            <label>房间号<input placeholder="ABCDE" /></label>
+            <label>语言<select><option>中文</option><option>English</option></select></label>
+          </div>
+          <button class="primary" type="button">开始 / 加入</button>
+        </form>
+      </section>
+
+      <aside class="side-panel">
+        <div>
+          <h2>局域网房间</h2>
+          <span class="badge">未创建</span>
+        </div>
+        <div class="room-code">
+          <span class="badge">房间号</span>
+          <strong>ABCDE</strong>
+          <input readonly value="http://10.0.0.181:4173/?room=ABCDE" />
+        </div>
+        <div class="settings">
+          <label>起始资金<input type="range" min="1000" max="4000" value="1500" /></label>
+          <label>起点奖励<input type="range" min="100" max="1000" value="200" /></label>
+          <label>玩家人数<select><option>2 人</option><option>3 人</option><option>4 人</option></select></label>
+        </div>
+        <button type="button">复制链接</button>
+      </aside>
+    </main>
+  </body>
+</html>

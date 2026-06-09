@@ -18,6 +18,16 @@ test('lobby exposes adjustable game settings before start', () => {
   expectMarkup('id="lap-bonus-range"', 'lap bonus range input');
 });
 
+test('LAN lobby exposes fixed avatar color choices', () => {
+  expectMarkup('id="lan-avatar-color-field"', 'LAN avatar color picker');
+  expectMarkup('name="avatar-color"', 'LAN avatar color radio group');
+  expectMarkup('value="red"', 'red avatar option');
+  expectMarkup('value="blue"', 'blue avatar option');
+  expectMarkup('value="green"', 'green avatar option');
+  expectMarkup('value="yellow"', 'yellow avatar option');
+  expectMarkup('id="network-avatar-color"', 'network avatar color update container');
+});
+
 test('lobby and play screens are split with a dedicated game screen container', () => {
   expectMarkup('id="lobby-screen"', 'lobby screen');
   expectMarkup('class="lobby-screen hero"', 'lobby screen class');

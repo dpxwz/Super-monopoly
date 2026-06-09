@@ -66,8 +66,8 @@ import {
   saveStoredLanSession,
   shareUrlForRoom,
 } from './lan-client.js';
+import { PLAYER_AVATAR_COLORS, avatarColorCss } from './player-colors.js';
 
-const playerColors = ['var(--player-1)', 'var(--player-2)', 'var(--player-3)', 'var(--player-4)'];
 const bankColor = 'rgba(174, 184, 199, 0.48)';
 
 const elements = {
@@ -84,6 +84,7 @@ const elements = {
   networkPanel: document.querySelector('#network-panel'),
   networkRoomCode: document.querySelector('#network-room-code'),
   networkPlayers: document.querySelector('#network-players'),
+  networkAvatarColor: document.querySelector('#network-avatar-color'),
   networkShareUrl: document.querySelector('#network-share-url'),
   networkHint: document.querySelector('#network-hint'),
   networkStatus: document.querySelector('#network-status'),
@@ -374,7 +375,15 @@ function canEditGameSettings() {
 }
 
 function defaultGameSettingsHint() {
-  return `起始资金 $${MIN_START_CASH}–$${MAX_START_CASH}（默认 $${START_CASH}）；经过起始格奖励 $${MIN_LAP_BONUS}–$${MAX_LAP_BONUS}（默认 $${LAP_BONUS}）。`;
+  return t(
+    'ui.gameSettingsHint',
+    MIN_START_CASH,
+    MAX_START_CASH,
+    START_CASH,
+    MIN_LAP_BONUS,
+    MAX_LAP_BONUS,
+    LAP_BONUS,
+  );
 }
 
 function renderGameSettings() {
@@ -415,7 +424,7 @@ function renderGameSettings() {
 
   if (elements.gameSettingsHint) {
     if (isLan && room?.lobby?.started) {
-      elements.gameSettingsHint.textContent = '游戏进行中，设置已锁定。';
+      elements.gameSettingsHint.textContent = t('ui.gameSettingsLocked');
     } else {
       elements.gameSettingsHint.textContent = defaultGameSettingsHint();
     }
@@ -505,11 +514,12 @@ function bindEvents() {
       }
 
       const playerName = String(formData.get('lan-player-name') || formData.getAll('player')[0] || '玩家').trim();
+      const avatarColor = String(formData.get('avatar-color') ?? '').trim();
       if (mode === 'lan-host') {
-        await createLanRoom(playerName);
+        await createLanRoom(playerName, avatarColor);
       } else {
         const code = String(formData.get('room-code') ?? '').trim();
-        await joinLanRoom(code, playerName);
+        await joinLanRoom(code, playerName, avatarColor);
       }
     });
   });
@@ -526,6 +536,15 @@ function bindEvents() {
     safeAction(async () => {
       await leaveLanSession();
       setMessage('已退出局域网联机，回到本地模式。');
+    });
+  });
+
+  elements.networkPanel?.addEventListener('change', (event) => {
+    const colorInput = event.target.closest('input[name="network-avatar-color"]');
+    if (!colorInput) return;
+    safeAction(async () => {
+      await updateLanAvatarColor(colorInput.value);
+      setMessage(t('ui.avatarColorUpdated'));
     });
   });
 
@@ -1111,13 +1130,14 @@ async function runGameAction(localAction, lanAction) {
   return localAction();
 }
 
-async function createLanRoom(playerName) {
+async function createLanRoom(playerName, avatarColor = '') {
   await refreshLanServerInfo();
   const snapshot = await apiRequest('/api/rooms', {
     method: 'POST',
     body: {
       playerName,
       settings: readLocalGameSettings(),
+      ...(avatarColor ? { avatarColor } : {}),
     },
   });
   applyLanSnapshot(snapshot);
@@ -1126,7 +1146,7 @@ async function createLanRoom(playerName) {
   setMessage(`已创建局域网房间 ${networkSession.roomCode}，等待其他玩家加入。`);
 }
 
-async function joinLanRoom(roomCode, playerName) {
+async function joinLanRoom(roomCode, playerName, avatarColor = '') {
   if (!roomCode) {
     throw new Error('请输入要加入的局域网房间号。');
   }
@@ -1144,6 +1164,9 @@ async function joinLanRoom(roomCode, playerName) {
       body: { clientId: networkSession.clientId },
     });
     applyLanSnapshot(snapshot);
+    if (avatarColor && networkSession.room?.lobby?.started !== true) {
+      await updateLanAvatarColor(avatarColor);
+    }
     rememberRoomInUrl();
     startLanPolling();
     setMessage(`你已在局域网房间 ${networkSession.roomCode} 中。`);
@@ -1156,12 +1179,30 @@ async function joinLanRoom(roomCode, playerName) {
     body: {
       playerName,
       ...(knownClientId ? { clientId: knownClientId } : {}),
+      ...(avatarColor ? { avatarColor } : {}),
     },
   });
   applyLanSnapshot(snapshot);
+  if (avatarColor && networkSession.room?.lobby?.started !== true) {
+    await updateLanAvatarColor(avatarColor);
+  }
   rememberRoomInUrl();
   startLanPolling();
   setMessage(`已加入局域网房间 ${networkSession.roomCode}，等待房主开始。`);
+}
+
+async function updateLanAvatarColor(avatarColor) {
+  if (!networkSession.roomCode || !networkSession.clientId) {
+    throw new Error('还没有加入局域网房间。');
+  }
+  const snapshot = await apiRequest(`/api/rooms/${encodeURIComponent(networkSession.roomCode)}/avatar-color`, {
+    method: 'POST',
+    body: {
+      clientId: networkSession.clientId,
+      avatarColor,
+    },
+  });
+  applyLanSnapshot(snapshot);
 }
 
 async function startLanGame() {
@@ -1408,6 +1449,41 @@ function renderModeFields() {
   renderGameSettings();
 }
 
+function lanParticipantFor(playerId) {
+  if (!isLanMode()) return null;
+  return networkSession.room?.lobby?.players?.find((player) => player.playerId === playerId) ?? null;
+}
+
+function lanParticipantIndex(playerId) {
+  if (!isLanMode()) return -1;
+  return networkSession.room?.lobby?.players?.findIndex((player) => player.playerId === playerId) ?? -1;
+}
+
+function playerAvatarColor(playerId, fallbackIndex = 0) {
+  return avatarColorCss(lanParticipantFor(playerId)?.avatarColor, Math.max(0, fallbackIndex));
+}
+
+function playerAvatarNumber(playerId, fallbackIndex = 0) {
+  const lanIndex = lanParticipantIndex(playerId);
+  return String((lanIndex >= 0 ? lanIndex : Math.max(0, fallbackIndex)) + 1);
+}
+
+function avatarColorPickerMarkup({ inputName, selectedColor, usedByOthers = new Set(), disabled = false } = {}) {
+  return PLAYER_AVATAR_COLORS.map((color) => {
+    const isSelected = color.id === selectedColor;
+    const isTaken = usedByOthers.has(color.id);
+    const isDisabled = disabled || (isTaken && !isSelected);
+    const title = isTaken && !isSelected ? t('ui.avatarColorTaken') : t(color.labelKey);
+    return `
+      <label class="avatar-color-option${isTaken && !isSelected ? ' is-taken' : ''}" title="${escapeHtml(title)}">
+        <input type="radio" name="${escapeHtml(inputName)}" value="${escapeHtml(color.id)}"${isSelected ? ' checked' : ''}${isDisabled ? ' disabled' : ''} />
+        <span class="avatar-color-swatch" style="--choice-color: ${color.cssVar}"></span>
+        <span>${escapeHtml(t(color.labelKey))}</span>
+      </label>
+    `;
+  }).join('');
+}
+
 function isLanRemovedFromRoomError(error) {
   const message = String(error?.message ?? '');
   return /不是该局域网房间的玩家|找不到局域网房间/i.test(message);
@@ -1420,12 +1496,18 @@ function renderNetworkPanel() {
   if (!isLanMode()) {
     elements.networkPanel.hidden = true;
     elements.networkStatus.textContent = '本地模式';
+    if (elements.networkAvatarColor) elements.networkAvatarColor.innerHTML = '';
     renderGameSettings();
     return;
   }
 
   const room = networkSession.room;
   const players = room?.lobby?.players ?? [];
+  const ownParticipant = players.find((player) => player.playerId === networkSession.playerId) ?? null;
+  const usedByOthers = new Set(players
+    .filter((player) => player.playerId !== networkSession.playerId)
+    .map((player) => player.avatarColor)
+    .filter(Boolean));
   const shareUrl = shareUrlForRoom({
     origin: window.location.origin,
     pathname: window.location.pathname,
@@ -1436,8 +1518,25 @@ function renderNetworkPanel() {
   elements.networkPanel.hidden = false;
   elements.networkRoomCode.textContent = networkSession.roomCode ?? '--';
   elements.networkShareUrl.value = shareUrl;
+  if (elements.networkAvatarColor) {
+    elements.networkAvatarColor.innerHTML = ownParticipant && !room?.lobby?.started
+      ? `
+        <fieldset class="avatar-color-picker">
+          <legend>${escapeHtml(t('ui.avatarColor'))}</legend>
+          <div class="avatar-color-options">
+            ${avatarColorPickerMarkup({
+              inputName: 'network-avatar-color',
+              selectedColor: ownParticipant.avatarColor,
+              usedByOthers,
+            })}
+          </div>
+          <p class="muted compact-hint">${escapeHtml(t('ui.avatarColorChangeHint'))}</p>
+        </fieldset>
+      `
+      : '';
+  }
   elements.networkPlayers.innerHTML = players
-    .map((player) => {
+    .map((player, index) => {
       const labels = [
         escapeHtml(player.name),
         player.playerId === networkSession.playerId ? '（你）' : '',
@@ -1450,7 +1549,7 @@ function renderNetworkPanel() {
       const kickButton = canKick
         ? `<button type="button" class="lan-kick-button danger-button" data-kick-player="${escapeHtml(player.playerId)}" aria-label="踢出 ${escapeHtml(player.name)}">踢出</button>`
         : '';
-      return `<span class="network-player-badge badge">${labels}${kickButton}</span>`;
+      return `<span class="network-player-badge badge"><span class="player-dot" style="--dot: ${avatarColorCss(player.avatarColor, index)}"></span>${labels}${kickButton}</span>`;
     })
     .join('');
   elements.networkHint.textContent = room?.lobby?.started
@@ -1498,7 +1597,7 @@ function renderDice() {
 
   const currentPlayer = getCurrentPlayer(game);
   const playerIndex = game.players.findIndex(p => p.id === currentPlayer.id);
-  const color = playerColors[playerIndex] || 'var(--accent-strong)';
+  const color = playerAvatarColor(currentPlayer.id, playerIndex);
   elements.diceContainer.style.setProperty('--dice-color', color);
 
   if (game.phase === 'roll') {
@@ -1691,7 +1790,7 @@ function renderLobbyState() {
     return `
     <article class="player-card${player.playerId === networkSession.playerId ? ' is-active' : ''}" data-player-id="${player.playerId}">
       <div class="card-topline">
-        <strong><span class="player-avatar" style="--dot: ${playerColors[index]}">${index + 1}</span>${escapeHtml(player.name)}</strong>
+        <strong><span class="player-avatar" style="--dot: ${avatarColorCss(player.avatarColor, index)}">${index + 1}</span>${escapeHtml(player.name)}</strong>
         <span class="card-topline-actions">
           ${kickButton}
           <span class="badge">${player.isHost ? '房主' : '等待'}${player.playerId === networkSession.playerId ? ' · 你' : ''}</span>
@@ -1735,7 +1834,7 @@ function renderFocusedPlayerPanel() {
     elements.rightPlayerCash.textContent = '等待开始';
     elements.rightPlayerMode.textContent = '联机大厅中；游戏开始后这里会固定显示你的地产和合同。';
     elements.rightPlayerAvatar.textContent = participant ? String(index + 1) : '?';
-    elements.rightPlayerAvatar.style.setProperty('--dot', playerColors[Math.max(0, index)] ?? 'var(--accent)');
+    elements.rightPlayerAvatar.style.setProperty('--dot', avatarColorCss(participant?.avatarColor, Math.max(0, index)));
     return;
   }
 
@@ -1746,8 +1845,8 @@ function renderFocusedPlayerPanel() {
   elements.rightPlayerMode.textContent = isLanMode()
     ? '联机模式下右侧栏目固定展示你自己的地产和合同。'
     : '本地模式下右侧栏目跟随当前回合玩家。';
-  elements.rightPlayerAvatar.textContent = String(index + 1);
-  elements.rightPlayerAvatar.style.setProperty('--dot', playerColors[index] ?? 'var(--accent)');
+  elements.rightPlayerAvatar.textContent = playerAvatarNumber(focusPlayer.id, index);
+  elements.rightPlayerAvatar.style.setProperty('--dot', playerAvatarColor(focusPlayer.id, index));
 }
 
 function renderChatPanel() {
@@ -1835,7 +1934,7 @@ function openPlayerDetail(playerId) {
   elements.playerDetailCash.textContent = `$${formatMoney(player.cash)}`;
   elements.playerDetailStatus.textContent = player.bankrupt ? t('ui.bankrupt') : (index === game.turn ? t('ui.acting') : t('ui.waiting'));
   elements.playerDetailAvatar.textContent = String(index + 1);
-  elements.playerDetailAvatar.style.setProperty('--dot', playerColors[index] ?? 'var(--accent)');
+  elements.playerDetailAvatar.style.setProperty('--dot', playerAvatarColor(player.id, index));
   elements.playerDetailProperties.innerHTML = holdings.length
     ? holdings.map((holding) => `
       <article class="property-card" style="--stripe: ${stripeFor(holding.property)}">
@@ -1993,7 +2092,7 @@ function renderBoard() {
     if (currentPlayer.position === index) {
       square.classList.add('is-current');
       const playerIndex = game.players.findIndex((p) => p.id === currentPlayer.id);
-      const color = playerColors[playerIndex] || 'var(--accent)';
+      const color = playerAvatarColor(currentPlayer.id, playerIndex);
       square.style.setProperty('--current-player-color', color);
     }
     square.style.gridColumn = String(grid.column);
@@ -2022,7 +2121,7 @@ function renderPlayers() {
     return `
       <article class="player-card${activeClass}" data-player-id="${player.id}">
         <div class="card-topline" style="margin-bottom: 0;">
-          <strong><span class="player-avatar" style="--dot: ${playerColors[index]}">${index + 1}</span>${escapeHtml(player.name)}</strong>
+          <strong><span class="player-avatar" style="--dot: ${playerAvatarColor(player.id, index)}">${playerAvatarNumber(player.id, index)}</span>${escapeHtml(player.name)}</strong>
           <span class="badge player-cash-badge" style="font-weight: 700; color: var(--ink);">$${formatMoney(player.cash)}</span>
         </div>
       </article>
@@ -3036,7 +3135,7 @@ function shareBarMarkup(property) {
 function holderColor(playerId) {
   if (playerId === BANK_ID) return bankColor;
   const index = game.players.findIndex((player) => player.id === playerId);
-  return playerColors[index] ?? 'var(--accent)';
+  return playerAvatarColor(playerId, index);
 }
 
 function squareCompactMarkup(space) {
@@ -3077,8 +3176,8 @@ function squareDetailPlacement(grid) {
 }
 
 function tokenMarkup(player) {
-  const index = Number(player.id.replace('p', '')) - 1;
-  return `<span class="token" style="background: ${playerColors[index]}">${index + 1}</span>`;
+  const index = game.players.findIndex((candidate) => candidate.id === player.id);
+  return `<span class="token" style="background: ${playerAvatarColor(player.id, index)}">${playerAvatarNumber(player.id, index)}</span>`;
 }
 
 function stripeFor(space) {
@@ -3358,8 +3457,13 @@ function ensurePlayerTokenWrappers() {
       wrapper = document.createElement('div');
       wrapper.id = `player-token-wrapper-${player.id}`;
       wrapper.className = 'player-token-wrapper';
-      wrapper.innerHTML = `<span class="token" style="background: ${playerColors[index]}">${index + 1}</span>`;
+      wrapper.innerHTML = `<span class="token" style="background: ${playerAvatarColor(player.id, index)}">${playerAvatarNumber(player.id, index)}</span>`;
       boardEl.appendChild(wrapper);
+    }
+    const token = wrapper.querySelector('.token');
+    if (token) {
+      token.style.background = playerAvatarColor(player.id, index);
+      token.textContent = playerAvatarNumber(player.id, index);
     }
 
     const state = playerTokenPositions[player.id];

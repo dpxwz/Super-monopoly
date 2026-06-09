@@ -39,6 +39,7 @@ import {
   castKickVote,
   advanceKickVote,
 } from './src/game.js';
+import { normalizeAvatarColorId, nextAvailableAvatarColor } from './src/player-colors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,10 +53,10 @@ export function createRoomStore({
 } = {}) {
   const rooms = new Map();
 
-  function createRoom({ playerName, settings } = {}) {
+  function createRoom({ playerName, settings, avatarColor } = {}) {
     const roomCode = uniqueRoomCode(rooms, createCode);
     const clientId = createClientId();
-    const host = makeParticipant(clientId, 0, playerName, true);
+    const host = makeParticipant(clientId, 0, playerName, true, { avatarColor });
     const room = {
       roomCode,
       hostClientId: clientId,
@@ -78,7 +79,7 @@ export function createRoomStore({
     return withClient(room, host);
   }
 
-  function joinRoom(rawCode, { playerName, clientId: existingClientId } = {}) {
+  function joinRoom(rawCode, { playerName, clientId: existingClientId, avatarColor } = {}) {
     const room = requireRoom(rawCode);
     if (room.lobby.started) {
       throw new Error('游戏已经开始，不能再加入这个局域网房间。');
@@ -97,8 +98,29 @@ export function createRoomStore({
     }
 
     const clientId = createClientId();
-    const participant = makeParticipant(clientId, room.lobby.players.length, playerName, false);
+    const participant = makeParticipant(clientId, room.lobby.players.length, playerName, false, {
+      avatarColor,
+      usedAvatarColors: room.lobby.players.map((player) => player.avatarColor),
+    });
     room.lobby.players.push(participant);
+    bump(room);
+    return withClient(room, participant);
+  }
+
+  function updateAvatarColor(rawCode, clientId, { avatarColor } = {}) {
+    const room = requireRoom(rawCode);
+    const participant = requireClient(room, clientId);
+    if (room.lobby.started) {
+      throw new Error('游戏已经开始，不能修改头像颜色。');
+    }
+
+    participant.avatarColor = chooseParticipantAvatarColor({
+      avatarColor,
+      usedAvatarColors: room.lobby.players
+        .filter((player) => player.clientId !== participant.clientId)
+        .map((player) => player.avatarColor),
+      preferredIndex: room.lobby.players.findIndex((player) => player.clientId === participant.clientId),
+    });
     bump(room);
     return withClient(room, participant);
   }
@@ -400,6 +422,7 @@ export function createRoomStore({
     joinRoom,
     startRoom,
     updateLobbySettings,
+    updateAvatarColor,
     returnToLobby,
     resumeRoom,
     leaveRoom,
@@ -510,6 +533,7 @@ function publicPlayer(player) {
     playerId: player.playerId,
     name: player.name,
     isHost: player.isHost,
+    avatarColor: player.avatarColor,
   };
 }
 
@@ -529,18 +553,46 @@ function publicClient(participant) {
     playerId: participant.playerId,
     name: participant.name,
     isHost: participant.isHost,
+    avatarColor: participant.avatarColor,
   };
 }
 
-function makeParticipant(clientId, index, playerName, isHost) {
+function makeParticipant(clientId, index, playerName, isHost, { avatarColor, usedAvatarColors = [] } = {}) {
   const fallback = isHost ? '房主' : `玩家 ${index + 1}`;
   return {
     clientId,
     playerId: `p${index + 1}`,
     name: normalizePlayerName(playerName, fallback),
     isHost,
+    avatarColor: chooseParticipantAvatarColor({
+      avatarColor,
+      usedAvatarColors,
+      preferredIndex: index,
+    }),
     joinedAt: Date.now(),
   };
+}
+
+function chooseParticipantAvatarColor({ avatarColor, usedAvatarColors = [], preferredIndex = 0 } = {}) {
+  const requestedRaw = String(avatarColor ?? '').trim();
+  const requested = normalizeAvatarColorId(requestedRaw);
+  const used = new Set(usedAvatarColors.map(normalizeAvatarColorId).filter(Boolean));
+
+  if (requestedRaw && !requested) {
+    throw new Error('头像颜色无效，请从提供的颜色中选择。');
+  }
+  if (requested) {
+    if (used.has(requested)) {
+      throw new Error('这个头像颜色已被其他玩家使用，请选择其他颜色。');
+    }
+    return requested;
+  }
+
+  const assigned = nextAvailableAvatarColor(used, Math.max(0, preferredIndex));
+  if (!assigned) {
+    throw new Error('没有可用的头像颜色。');
+  }
+  return assigned;
 }
 
 function removeLobbyParticipant(room, participant) {
@@ -628,7 +680,7 @@ function matchApiRoute(pathname) {
   if (pathname === '/api/rooms') {
     return { name: 'rooms' };
   }
-  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|kick|return-lobby|settings|state|actions|chat))?$/);
+  const match = pathname.match(/^\/api\/rooms\/([^/]+)(?:\/(join|start|resume|leave|kick|return-lobby|settings|avatar-color|state|actions|chat))?$/);
   if (!match) {
     return null;
   }
@@ -672,6 +724,14 @@ async function handleApiRoute({ request, response, route, store, url }) {
     const body = await readJsonBody(request);
     sendJson(response, 200, store.updateLobbySettings(route.roomCode, body.clientId, {
       settings: body.settings,
+    }));
+    return;
+  }
+
+  if (route.name === 'avatar-color' && request.method === 'POST') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, store.updateAvatarColor(route.roomCode, body.clientId, {
+      avatarColor: body.avatarColor,
     }));
     return;
   }

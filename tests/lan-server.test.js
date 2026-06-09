@@ -108,6 +108,41 @@ test('LAN room store creates a host lobby, accepts joins, and only the host can 
   assert.equal(started.room.revision, 3);
 });
 
+test('LAN room store assigns and enforces unique fixed avatar colors', () => {
+  const store = deterministicStore();
+
+  const created = store.createRoom({ playerName: 'Ada', avatarColor: 'blue' });
+  assert.equal(created.client.avatarColor, 'blue');
+  assert.equal(created.room.lobby.players[0].avatarColor, 'blue');
+
+  assert.throws(
+    () => store.joinRoom('ROOM1', { playerName: 'Dup', avatarColor: 'blue' }),
+    /头像颜色|color|used/i,
+  );
+  assert.throws(
+    () => store.joinRoom('ROOM1', { playerName: 'Bad', avatarColor: '#ff00ff' }),
+    /头像颜色|color|invalid/i,
+  );
+
+  const joined = store.joinRoom('ROOM1', { playerName: 'Lin' });
+  assert.equal(joined.client.avatarColor, 'red');
+
+  const changed = store.updateAvatarColor('ROOM1', joined.client.clientId, { avatarColor: 'green' });
+  assert.equal(changed.client.avatarColor, 'green');
+  assert.equal(changed.room.lobby.players[1].avatarColor, 'green');
+
+  assert.throws(
+    () => store.updateAvatarColor('ROOM1', created.client.clientId, { avatarColor: 'green' }),
+    /头像颜色|color|used/i,
+  );
+
+  store.startRoom('ROOM1', created.client.clientId);
+  assert.throws(
+    () => store.updateAvatarColor('ROOM1', joined.client.clientId, { avatarColor: 'yellow' }),
+    /已经开始|started/i,
+  );
+});
+
 test('LAN room store lets the host return everyone to the enter-game lobby while keeping the room', () => {
   const store = deterministicStore();
   const created = store.createRoom({ playerName: 'Ada' });
@@ -443,6 +478,16 @@ test('LAN HTTP API exposes health URLs and supports create/join/start/resume/sta
     });
     assert.deepEqual(afterKick.room.lobby.players.map((player) => player.name), ['Ada', 'Grace']);
     assert.equal(afterKick.room.lobby.players[1].playerId, 'p2');
+
+    const recolored = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/avatar-color`, {
+      method: 'POST',
+      body: {
+        clientId: extraGuest.client.clientId,
+        avatarColor: 'yellow',
+      },
+    });
+    assert.equal(recolored.client.avatarColor, 'yellow');
+    assert.equal(recolored.room.lobby.players[1].avatarColor, 'yellow');
 
     const started = await requestJson(baseUrl, `/api/rooms/${host.roomCode}/start`, {
       method: 'POST',
