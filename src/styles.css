@@ -483,10 +483,46 @@ select {
 .property-list,
 .vote-list,
 .pending-trade-list,
+.active-trade-list,
 .contract-list,
 .chat-lines {
   display: grid;
   gap: 10px;
+}
+
+.active-trades-panel .active-trade-list {
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 6px;
+}
+
+.active-trades-panel .active-trade-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.active-trades-panel .active-trade-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.active-trade-card {
+  cursor: pointer;
+}
+
+.active-trade-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.052);
+}
+
+.trade-detail-body {
+  display: grid;
+  gap: 12px;
+}
+
+.trade-detail-actions {
+  margin-top: 16px;
 }
 
 .property-panel .property-list,

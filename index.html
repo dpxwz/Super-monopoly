@@ -262,6 +262,17 @@
             </div>
           </section>
 
+          <section class="panel-section active-trades-panel" aria-labelledby="active-trades-heading">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">pending trades</p>
+                <h2 id="active-trades-heading">进行中交易</h2>
+              </div>
+            </div>
+            <p class="hint-copy">双击交易条目可查看详情并处理。</p>
+            <div id="active-trades-list" class="active-trade-list"></div>
+          </section>
+
           <section class="panel-section property-panel">
             <div class="section-heading">
               <h2 data-i18n="ui.playerShares">当前玩家地产</h2>
@@ -424,6 +435,21 @@
           </div>
           <ol id="auction-lot-queue" class="auction-lot-queue"></ol>
         </section>
+      </section>
+    </div>
+
+    <div id="trade-detail-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="trade-detail-heading" hidden>
+      <section class="overlay-card trade-detail-card">
+        <div class="overlay-heading">
+          <div>
+            <p class="eyebrow">trade detail</p>
+            <h2 id="trade-detail-heading">交易详情</h2>
+            <p id="trade-detail-parties" class="muted"></p>
+          </div>
+          <button class="icon-button" type="button" data-close-trade-detail aria-label="关闭交易详情">×</button>
+        </div>
+        <div id="trade-detail-body" class="trade-detail-body"></div>
+        <div id="trade-detail-actions" class="action-row trade-detail-actions"></div>
       </section>
     </div>
 

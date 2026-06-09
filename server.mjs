@@ -12,6 +12,7 @@ try {
 import {
   CONTRACT_TYPES,
   acceptTrade,
+  cancelTrade,
   buildHouse,
   buyCurrentShares,
   castBuildVote,
@@ -353,6 +354,15 @@ export function createRoomStore({
         assertTradeParticipant(game, participant, payload.tradeId);
         rejectTrade(game, String(payload.tradeId ?? ''));
         break;
+      case 'cancelTrade': {
+        const tradeId = String(payload.tradeId ?? '');
+        const trade = findTrade(game, tradeId);
+        if (trade.fromPlayerId !== participant.playerId) {
+          throw new Error('只有交易发起方可以取消这笔交易。');
+        }
+        cancelTrade(game, tradeId, participant.playerId);
+        break;
+      }
       case 'createContract':
         createContractFromPayload(game, payload, participant);
         break;

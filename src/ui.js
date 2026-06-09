@@ -49,6 +49,7 @@ import {
   proposeTrade,
   acceptTrade,
   rejectTrade,
+  cancelTrade,
   resolveBuildVote,
   resolvePendingConstruction,
   rollAndMove,
@@ -157,6 +158,7 @@ const elements = {
   tradeRequestContract: document.querySelector('#trade-request-contract'),
   tradeNote: document.querySelector('#trade-note'),
   pendingTrades: document.querySelector('#pending-trades'),
+  activeTradesList: document.querySelector('#active-trades-list'),
   contractForm: document.querySelector('#contract-form'),
   contractType: document.querySelector('#contract-type'),
   contractProperty: document.querySelector('#contract-property'),
@@ -179,6 +181,11 @@ const elements = {
   rightPlayerCash: document.querySelector('#right-player-cash'),
   rightPlayerAvatar: document.querySelector('#right-player-avatar'),
   tradeOverlay: document.querySelector('#trade-overlay'),
+  tradeDetailOverlay: document.querySelector('#trade-detail-overlay'),
+  tradeDetailHeading: document.querySelector('#trade-detail-heading'),
+  tradeDetailParties: document.querySelector('#trade-detail-parties'),
+  tradeDetailBody: document.querySelector('#trade-detail-body'),
+  tradeDetailActions: document.querySelector('#trade-detail-actions'),
   contractOverlay: document.querySelector('#contract-overlay'),
   playerDetailOverlay: document.querySelector('#player-detail-overlay'),
   playerDetailName: document.querySelector('#player-detail-name'),
@@ -195,6 +202,7 @@ let gameScreenActive = false;
 let playerTokenPositions = {}; // playerId -> { current: number, target: number, animating: boolean }
 let lastGameInstance = null;
 let lastTurnState = null;
+let openTradeDetailId = null;
 let lanServerUrls = [];
 let actionPending = false;
 let networkSession = {
@@ -768,6 +776,52 @@ function bindEvents() {
     });
   });
 
+  elements.activeTradesList?.addEventListener('dblclick', (event) => {
+    const card = event.target.closest('[data-trade-id]');
+    if (!card) return;
+    openTradeDetail(card.dataset.tradeId);
+  });
+
+  elements.tradeDetailActions?.addEventListener('click', (event) => {
+    const acceptButton = event.target.closest('[data-accept-trade-detail]');
+    const rejectButton = event.target.closest('[data-reject-trade-detail]');
+    const cancelButton = event.target.closest('[data-cancel-trade-detail]');
+    if (acceptButton) {
+      safeAction(async () => {
+        const tradeId = acceptButton.dataset.acceptTradeDetail;
+        await runGameAction(() => acceptTrade(game, tradeId, Date.now()), {
+          type: 'acceptTrade',
+          payload: { tradeId },
+        });
+        setMessage(t('msg.tradeAccepted', tradeId));
+        closeTradeDetailOverlay();
+      });
+    }
+    if (rejectButton) {
+      safeAction(async () => {
+        const tradeId = rejectButton.dataset.rejectTradeDetail;
+        await runGameAction(() => rejectTrade(game, tradeId), {
+          type: 'rejectTrade',
+          payload: { tradeId },
+        });
+        setMessage(t('msg.tradeRejected', tradeId));
+        closeTradeDetailOverlay();
+      });
+    }
+    if (cancelButton) {
+      safeAction(async () => {
+        const tradeId = cancelButton.dataset.cancelTradeDetail;
+        const playerId = getTradeViewerPlayerId() ?? game.pendingTrades.find((trade) => trade.id === tradeId)?.fromPlayerId;
+        await runGameAction(() => cancelTrade(game, tradeId, playerId), {
+          type: 'cancelTrade',
+          payload: { tradeId },
+        });
+        setMessage(t('msg.tradeCancelled', tradeId));
+        closeTradeDetailOverlay();
+      });
+    }
+  });
+
   elements.pendingTrades.addEventListener('click', (event) => {
     const acceptButton = event.target.closest('[data-accept-trade]');
     const rejectButton = event.target.closest('[data-reject-trade]');
@@ -906,10 +960,16 @@ function bindEvents() {
       closeContractOverlay();
       return;
     }
+    if (event.target.closest('[data-close-trade-detail]')) {
+      closeTradeDetailOverlay();
+      return;
+    }
     if (event.target.closest('[data-close-overlay]')) {
       const overlay = event.target.closest('.overlay');
       if (overlay === elements.playerDetailOverlay) {
         elements.playerDetailOverlay.hidden = true;
+      } else if (overlay === elements.tradeDetailOverlay) {
+        closeTradeDetailOverlay();
       } else {
         closeTradeOverlay();
       }
@@ -1560,6 +1620,7 @@ function render() {
   renderProperties();
   renderVotes();
   renderTradePanel();
+  renderActiveTradesPanel();
   renderContracts();
   renderFocusedPlayerPanel();
   renderChatPanel();
@@ -1643,6 +1704,9 @@ function renderLobbyState() {
   elements.properties.innerHTML = '<p class="empty-state">联机游戏开始后会显示你的地产。</p>';
   elements.votes.innerHTML = '<p class="empty-state">联机游戏开始后会显示投票。</p>';
   elements.pendingTrades.innerHTML = '<p class="empty-state">联机游戏开始后可以交易。</p>';
+  if (elements.activeTradesList) {
+    elements.activeTradesList.innerHTML = '<p class="empty-state">联机游戏开始后会显示进行中的交易。</p>';
+  }
   elements.contracts.innerHTML = '<p class="empty-state">联机游戏开始后会显示你的合同。</p>';
   elements.log.innerHTML = '<li>等待房主开始联机游戏。</li>';
   renderFocusedPlayerPanel();
@@ -1730,9 +1794,18 @@ function closeTradeOverlay() {
   if (elements.tradeOverlay) elements.tradeOverlay.hidden = true;
 }
 
+function closeTradeDetailOverlay() {
+  openTradeDetailId = null;
+  if (elements.tradeDetailOverlay) elements.tradeDetailOverlay.hidden = true;
+}
+
 function closeTopOverlay() {
   if (elements.contractOverlay && !elements.contractOverlay.hidden) {
     closeContractOverlay();
+    return;
+  }
+  if (elements.tradeDetailOverlay && !elements.tradeDetailOverlay.hidden) {
+    closeTradeDetailOverlay();
     return;
   }
   if (elements.playerDetailOverlay && !elements.playerDetailOverlay.hidden) {
@@ -1745,7 +1818,7 @@ function closeTopOverlay() {
 }
 
 function closeOverlays() {
-  [elements.tradeOverlay, elements.contractOverlay, elements.playerDetailOverlay].forEach((overlay) => {
+  [elements.tradeOverlay, elements.tradeDetailOverlay, elements.contractOverlay, elements.playerDetailOverlay].forEach((overlay) => {
     if (overlay) overlay.hidden = true;
   });
 }
@@ -2110,6 +2183,97 @@ function renderTradeAssetOptions() {
   populateContractTradeSelect(elements.tradeRequestContract, elements.tradeTo.value, requestContractIds);
   tradeOfferCashBinding?.refreshBounds();
   tradeRequestCashBinding?.refreshBounds();
+}
+
+function getTradeViewerPlayerId() {
+  if (isLanMode()) return networkSession.playerId ?? null;
+  return null;
+}
+
+function getTradeViewerRole(trade) {
+  const viewerId = getTradeViewerPlayerId();
+  if (!viewerId) return 'local';
+  if (trade.fromPlayerId === viewerId) return 'initiator';
+  if (trade.toPlayerId === viewerId) return 'recipient';
+  return 'observer';
+}
+
+function renderTradeDetailActions(trade) {
+  if (!elements.tradeDetailActions) return;
+  if (trade.status !== 'pending') {
+    elements.tradeDetailActions.innerHTML = '';
+    return;
+  }
+  const role = getTradeViewerRole(trade);
+  const buttons = [];
+  if (role === 'initiator' || role === 'local') {
+    buttons.push(`<button type="button" class="ghost-button" data-cancel-trade-detail="${trade.id}">取消交易</button>`);
+  }
+  if (role === 'recipient' || role === 'local') {
+    buttons.push(`<button type="button" data-accept-trade-detail="${trade.id}">接受</button>`);
+    buttons.push(`<button type="button" class="ghost-button" data-reject-trade-detail="${trade.id}">拒绝</button>`);
+  }
+  elements.tradeDetailActions.innerHTML = buttons.join('');
+}
+
+function populateTradeDetail(trade) {
+  if (elements.tradeDetailHeading) {
+    elements.tradeDetailHeading.textContent = `交易 ${trade.id}`;
+  }
+  if (elements.tradeDetailParties) {
+    elements.tradeDetailParties.textContent = `${playerName(trade.fromPlayerId)} → ${playerName(trade.toPlayerId)}`;
+  }
+  if (elements.tradeDetailBody) {
+    elements.tradeDetailBody.innerHTML = `
+      <article class="pending-trade-card">
+        <div class="card-topline">
+          <strong>交易状态</strong>
+          <span class="badge">${trade.status}</span>
+        </div>
+        <p class="muted">发起方给出：${escapeHtml(assetSummary(trade.offer))}</p>
+        <p class="muted">接收方给出：${escapeHtml(assetSummary(trade.request))}</p>
+        ${trade.note ? `<p class="muted">备注：${escapeHtml(trade.note)}</p>` : ''}
+      </article>
+    `;
+  }
+  renderTradeDetailActions(trade);
+}
+
+function openTradeDetail(tradeId) {
+  const trade = game.pendingTrades.find((candidate) => candidate.id === tradeId);
+  if (!trade || !elements.tradeDetailOverlay) return;
+  openTradeDetailId = tradeId;
+  populateTradeDetail(trade);
+  openOverlay(elements.tradeDetailOverlay);
+}
+
+function refreshOpenTradeDetail() {
+  if (!openTradeDetailId || !elements.tradeDetailOverlay || elements.tradeDetailOverlay.hidden) return;
+  const trade = game.pendingTrades.find((candidate) => candidate.id === openTradeDetailId);
+  if (!trade || trade.status !== 'pending') {
+    closeTradeDetailOverlay();
+    return;
+  }
+  populateTradeDetail(trade);
+}
+
+function renderActiveTradesPanel() {
+  if (!elements.activeTradesList) return;
+  if (isLanMode() && !isLanStarted()) {
+    elements.activeTradesList.innerHTML = '<p class="empty-state">联机游戏开始后会显示进行中的交易。</p>';
+    return;
+  }
+  const trades = game.pendingTrades.filter((trade) => trade.status === 'pending');
+  if (trades.length === 0) {
+    elements.activeTradesList.innerHTML = '<p class="empty-state">当前没有进行中的交易。</p>';
+    return;
+  }
+  elements.activeTradesList.innerHTML = trades.map((trade) => `
+    <article class="active-trade-card pending-trade-card" data-trade-id="${trade.id}" tabindex="0">
+      <strong>${escapeHtml(playerName(trade.fromPlayerId))} → ${escapeHtml(playerName(trade.toPlayerId))}</strong>
+    </article>
+  `).join('');
+  refreshOpenTradeDetail();
 }
 
 function renderPendingTrades() {

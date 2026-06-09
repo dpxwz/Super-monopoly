@@ -802,6 +802,19 @@ export function rejectTrade(game, tradeId) {
   return trade;
 }
 
+export function cancelTrade(game, tradeId, playerId) {
+  const trade = getTrade(game, tradeId);
+  if (trade.status !== 'pending') {
+    throw new Error(t('error.onlyPendingTrade'));
+  }
+  if (trade.fromPlayerId !== playerId) {
+    throw new Error(t('error.onlyInitiatorCanCancel'));
+  }
+  trade.status = 'cancelled';
+  addLog(game, t('log.tradeCancelled', trade.id));
+  return trade;
+}
+
 export function expirePendingTrades(game, now = Date.now()) {
   const expired = [];
   for (const trade of game.pendingTrades) {
